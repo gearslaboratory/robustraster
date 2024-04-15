@@ -21,6 +21,19 @@ class RasterDataReaderInterface(ABC):
             with self.assertRaises(TypeError):
                 reader = RasterDataReaderInterface()  # This should raise a TypeError
 
+class EarthEngineInterface(ABC):
+    @abstractmethod
+    def _construct_ee_collection(self, parameters: dict) -> ee.ImageCollection:
+        """
+        Construct an Earth Engine image collection query based on parameters.
+
+        Parameters:
+        - parameters (dict): A dictionary containing parameters for the Earth Engine data.
+
+        Returns:
+        - ee.ImageCollection: Earth Engine image collection object.
+        """
+        
 class TestLocalRasterReader(unittest.TestCase):
     ''' 
     Test cases for the LocalRasterReader class.
@@ -211,7 +224,7 @@ class TestEarthEngineRasterReader(unittest.TestCase):
         self.assertIsNotNone(xarray_data)
         self.assertIsInstance(xarray_data, xr.Dataset)
 
-class EarthEngineRasterReader(RasterDataReaderInterface):
+class EarthEngineRasterReader(RasterDataReaderInterface, EarthEngineInterface):
     def __init__(self, parameters: dict, auth_key: str = None) -> None:
         """
         Initialize the EarthEngineRasterReader class.
