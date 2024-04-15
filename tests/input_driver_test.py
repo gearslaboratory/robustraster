@@ -56,11 +56,11 @@ class TestLocalRasterReader(unittest.TestCase):
         except Exception as e:
             print(f"Error occurred while removing {self.temp_invalid_file}: {e}")
     
-    def no_test_read_data(self) -> None:
+    def test_read_data(self) -> None:
         ''' 
         Test reading in a raster file from a local machine.
 
-        Assertions:
+        Test Assertions:
         - assertIsNotNone: if xr.DataArray is not None
         - assertIsInstance: if object is of instance xr.DataArray
         '''
@@ -82,7 +82,7 @@ class TestLocalRasterReader(unittest.TestCase):
         Exceptions:
         - rasterio.errors.RasterioIOError: if the raster file is not found.
 
-        Assertions:
+        Test Assertions:
         - assertRaises: if rasterio.errors.RasterioIOError is raised in read_data()
         - assertTrue: if the string "No such file or directory" appears in the rasterio.errors.RasterioIOError exception.
         '''
@@ -98,7 +98,7 @@ class TestLocalRasterReader(unittest.TestCase):
         Exceptions:
         - rasterio.errors.RasterioIOError if the raster file is not recognized as a supported file format.
 
-        Assertions:
+        Test Assertions:
         - assertRaises: if rasterio.errors.RasterioIOError is raised in read_data()
         - assertTrue: if the string "not recognized as a supported file format" appears in the rasterio.errors.RasterioIOError exception.
         '''
@@ -151,13 +151,12 @@ class TestEarthEngineRasterReader(unittest.TestCase):
             'crs': None,
             'scale': None
         }
-        #self._reader = EarthEngineRasterReader(parameters, auth_key=None)
 
     def test_construct_ee_collection_no_collection(self):
         '''
         Test if no ImageCollection is passed.
 
-        Assertions:
+        Test Assertions:
         - assertRaises: if collection is None
         - assertTrue: if the string "Earth Engine collection was not provided." appears in the ee.EEException exception.
         '''
@@ -174,7 +173,7 @@ class TestEarthEngineRasterReader(unittest.TestCase):
         '''
         Test to ensure the ImageCollection string is a valid collection type.
 
-        Assertions:
+        Test Assertions:
         - assertRaises: if the ImageCollection string is not str
         - assertTrue: if the string "Unrecognized argument type" appears in the ee.EEException exception. 
         '''
@@ -192,7 +191,7 @@ class TestEarthEngineRasterReader(unittest.TestCase):
         '''
         Test reading Earth Engine data.
         
-        Assertions:
+        Test Assertions:
         - assertIsNotNone if xr.Dataset is not None
         - assertIsInstance if object is of instance xr.Dataset
         '''
