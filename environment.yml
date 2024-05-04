@@ -1,0 +1,8 @@
+name: big-raster
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - coiled-runtime>=0.2.1
+  - xee=0.0.13
+  - rioxarray=0.15.0
