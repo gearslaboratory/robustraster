@@ -291,6 +291,7 @@ class EarthEngineRasterReader(RasterDataReaderInterface, EarthEngineInterface):
         # Construct Earth Engine image collection query based on parameters
         ee_collection = self._construct_ee_collection(parameters)
         scale = parameters.get('scale', None)
+        geometry = parameters.get('geometry', None)
         crs = parameters.get('crs', None)
 
         # Fetch data from Earth Engine
@@ -298,7 +299,8 @@ class EarthEngineRasterReader(RasterDataReaderInterface, EarthEngineInterface):
             ee_collection, 
             engine='ee', 
             crs=crs, 
-            scale=scale)
+            scale=scale,
+            geometry=geometry)
         
         return xarray_data
 
