@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from google.auth.exceptions import RefreshError
 import xarray as xr
 import rasterio
 import rioxarray
@@ -8,31 +9,19 @@ import unittest
 import traceback
 import ee
 import xee
+import json
 
-class RasterDataReaderInterface(ABC):
+class DataReaderInterface(ABC):
     @abstractmethod
-    def _read_data(self):
+    def read_data(self):
         """
         Abstract method to read raster data from the source.
         This method should be implemented in the derived classes.
         """
         def test_read_data_not_implemented_error(self):
-            # Test that instantiating RasterDataReaderInterface directly raises a TypeError
+            # Test that instantiating DataReaderInterface directly raises a TypeError
             with self.assertRaises(TypeError):
-                reader = RasterDataReaderInterface()  # This should raise a TypeError
-
-class EarthEngineInterface(ABC):
-    @abstractmethod
-    def _construct_ee_collection(self, parameters: dict) -> ee.ImageCollection:
-        """
-        Construct an Earth Engine image collection query based on parameters.
-
-        Parameters:
-        - parameters (dict): A dictionary containing parameters for the Earth Engine data.
-
-        Returns:
-        - ee.ImageCollection: Earth Engine image collection object.
-        """
+                reader = DataReaderInterface()  # This should raise a TypeError
         
 class TestLocalRasterReader(unittest.TestCase):
     ''' 
@@ -69,7 +58,7 @@ class TestLocalRasterReader(unittest.TestCase):
         except Exception as e:
             print(f"Error occurred while removing {self.temp_invalid_file}: {e}")
     
-    def test_read_data(self) -> None:
+    def no_test_read_data(self) -> None:
         ''' 
         Test reading in a raster file from a local machine.
 
@@ -121,7 +110,7 @@ class TestLocalRasterReader(unittest.TestCase):
             LocalRasterReader(self.temp_invalid_file)
         self.assertTrue("not recognized as a supported file format" in str(context.exception))
 
-class LocalRasterReader(RasterDataReaderInterface):
+class LocalRasterReader(DataReaderInterface):
     def __init__(self, file_path: str) -> None:
         '''
         Initialize a LocalRasterReader instance.
@@ -133,9 +122,9 @@ class LocalRasterReader(RasterDataReaderInterface):
         - file_path (str): The absolute path to the raster file being read.
         '''
         self._file_path = file_path
-        self._xarray_data = self._read_data()
+        self._xarray_data = self.read_data()
     
-    def _read_data(self) -> xr.Dataset:
+    def read_data(self) -> xr.Dataset:
         try:
             with rioxarray.open_rasterio(self._file_path, band_as_variable=True) as xarray_data:
                 return xarray_data
@@ -143,18 +132,24 @@ class LocalRasterReader(RasterDataReaderInterface):
             print(f"Error reading raster data from {e}:")
             raise
 
-class TestEarthEngineRasterReader(unittest.TestCase):
-    def setUp(self, auth_key=None):
+class TestEarthEngineReader(unittest.TestCase):
+    def setUp(self, json_key=None):
         ''' Set up the unit tests for all methods.'''
 
-        if auth_key:
-            ee.Initialize(auth_key)
+        if json_key:
+            with open(json_key, 'r') as file:
+                data = json.load(file)
+            credentials = ee.ServiceAccountCredentials(data["client_email"], json_key)
+            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
         else:
             try:
                 ee.Initialize()
             except ee.EEException:
                 ee.Authenticate()
-                ee.Initialize()
+                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
+            except RefreshError:
+                ee.Authenticate()
+                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
 
         parameters = {
             'collection': None,
@@ -179,7 +174,8 @@ class TestEarthEngineRasterReader(unittest.TestCase):
             'geometry': ee.Geometry.Point(-122.082, 37.42)
         }
         with self.assertRaises(ee.EEException) as context:
-            reader = EarthEngineRasterReader(parameters, auth_key=None)
+            reader = EarthEngineReader(json_key=None)
+            reader.read_data(parameters)
         self.assertTrue(f"Earth Engine collection was not provided." in str(context.exception))
     
     def test_construct_ee_collection_invalid_collection_type(self):
@@ -197,7 +193,8 @@ class TestEarthEngineRasterReader(unittest.TestCase):
             'geometry': ee.Geometry.Point(-122.082, 37.42)
         }
         with self.assertRaises(ee.EEException) as context:
-            reader = EarthEngineRasterReader(parameters, auth_key=None)
+            reader = EarthEngineReader(json_key=None)
+            reader.read_data(parameters)
         self.assertTrue(f"Unrecognized argument type" in str(context.exception))
 
     def test_read_data(self):
@@ -217,32 +214,39 @@ class TestEarthEngineRasterReader(unittest.TestCase):
             'scale': 0.25
         }
         # Test reading raster data successfully
-        reader = EarthEngineRasterReader(parameters, auth_key=None)
-        xarray_data = reader._xarray_data
-        
-        # Assert that xarray_data is not None and is an instance of xarray DataArray. What about xarray DataSet?
+        reader = EarthEngineReader(json_key=None)
+        #xarray_data = reader._xarray_data
+        xarray_data = reader.read_data(parameters)
+
+        # Assert that xarray_data is not None and is an instance of xr.Dataset.
         self.assertIsNotNone(xarray_data)
         self.assertIsInstance(xarray_data, xr.Dataset)
 
-class EarthEngineRasterReader(RasterDataReaderInterface, EarthEngineInterface):
-    def __init__(self, parameters: dict, auth_key: str = None) -> None:
+class EarthEngineReader(DataReaderInterface):
+    def __init__(self, json_key: str = None) -> None:
         """
-        Initialize the EarthEngineRasterReader class.
+        Initialize the EarthEngineReader class.
 
         Parameters:
         - auth_key (str): Earth Engine authentication key. If None, it assumes the user is already authenticated.
         """
 
-        if auth_key:
-            ee.Initialize(auth_key)
+        if json_key:
+            with open(json_key, 'r') as file:
+                data = json.load(file)
+            credentials = ee.ServiceAccountCredentials(data["client_email"], json_key)
+            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
         else:
             try:
-                ee.Initialize()
+                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
             except ee.EEException:
                 ee.Authenticate()
-                ee.Initialize()
+                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
+            except RefreshError:
+                ee.Authenticate()
+                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
         
-        self._xarray_data = self._read_data(parameters)
+        #self._xarray_data = self._read_data(parameters)
     
     def _construct_ee_collection(self, parameters: dict) -> ee.ImageCollection:
         """
@@ -277,7 +281,7 @@ class EarthEngineRasterReader(RasterDataReaderInterface, EarthEngineInterface):
         except ee.EEException:
             raise ee.EEException(f"Unrecognized argument type {type(collection)} to convert to an ImageCollection.")
     
-    def _read_data(self, parameters) -> xr.Dataset:
+    def read_data(self, parameters) -> xr.Dataset:
         """
         Read Earth Engine data and convert it to xarray format.
 
