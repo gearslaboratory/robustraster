@@ -10,7 +10,7 @@ class DaskHandler:
     def __init__(self, dask_client: Client = None) -> None:
         self.dask_client = dask_client
 
-    def _calculate_memory_limit(self, memory: int) -> str:
+    def _bytes_to_gigabytes(self, memory: int) -> str:
         gigabytes = memory / (1024 ** 3)
         return gigabytes
     
@@ -19,10 +19,10 @@ class DaskHandler:
 
     def create_local_cluster(self):
         num_cores = multiprocessing.cpu_count()
-        memory = psutil.virtual_memory().total
-        memory_per_worker = int(memory / num_cores)
-        memory_limit = self._calculate_memory_limit(memory_per_worker)
-        self.dask_client = Client(n_workers=num_cores, threads_per_worker=1, memory_limit=memory_limit)
+        total_memory = psutil.virtual_memory().total
+        total_memory_gb = self._bytes_to_gigabytes(total_memory)
+        memory_per_worker = f"{int(total_memory_gb / num_cores)}GB"
+        self.dask_client = Client(LocalCluster(n_workers=num_cores, threads_per_worker=1, memory_limit=memory_per_worker))
 
     def connect_to_cloud_cluster(self, scheduler_address: str):
         self.dask_client = Client(scheduler_address)
@@ -55,19 +55,18 @@ class TestDaskHandler(unittest.TestCase):
     @patch('__main__.Client')
     def test_create_local_cluster(self, mock_client, mock_cpu_count, mock_virtual_memory):
         mock_virtual_memory.return_value.total = 16 * 1024**3  # Mock 16GB total memory
-        
+
         def side_effect(*args, **kwargs):
-            #cluster_args = args[0]
             self.assertEqual(kwargs["n_workers"], 4)
             self.assertEqual(kwargs["threads_per_worker"], 1)
-            self.assertEqual(kwargs["memory_limit"], '1GB')
+            self.assertEqual(kwargs["memory_limit"], '4GB')
             return MagicMock()
 
-        with patch('__main__.Client', side_effect=side_effect):
+        with patch('__main__.LocalCluster', side_effect=side_effect):
             handler = DaskHandler()
             handler.create_local_cluster()
             self.assertIsNotNone(handler.dask_client)
-            self.assertTrue(mock_client.called)
+            mock_client.assert_called_once()
 
     @patch('dask.distributed.Client')
     def no_test_connect_to_cloud_cluster(self, mock_client):
