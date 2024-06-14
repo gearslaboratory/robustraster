@@ -38,11 +38,6 @@ class TestDaskHandler(unittest.TestCase):
         handler = DaskHandler()
         self.assertIsNone(handler.dask_client)
 
-    '''def test_calculate_memory_limit(self):
-        handler = DaskHandler()
-        self.assertEqual(handler._calculate_memory_limit(512), "512MB")
-        self.assertEqual(handler._calculate_memory_limit(2048), "2GB")'''
-
     @patch('__main__.Client')
     def test_create_local_threads(self, mock_client):
         handler = DaskHandler()
@@ -68,23 +63,33 @@ class TestDaskHandler(unittest.TestCase):
             self.assertIsNotNone(handler.dask_client)
             mock_client.assert_called_once()
 
-    @patch('dask.distributed.Client')
-    def no_test_connect_to_cloud_cluster(self, mock_client):
+    @patch('__main__.Client')
+    def test_connect_to_cloud_cluster(self, mock_client):
         handler = DaskHandler()
         handler.connect_to_cloud_cluster('tcp://scheduler-address:8786')
         mock_client.assert_called_once_with('tcp://scheduler-address:8786')
         self.assertIsNotNone(handler.dask_client)
 
-    @patch.object(DaskHandler, 'dask_client', new_callable=MagicMock)
-    def no_test_process_with_dask(self, mock_dask_client):
+    @patch('xarray.Dataset.chunk', return_value=MagicMock())
+    @patch('__main__.Client')
+    def test_process_with_dask(self, mock_client, mock_chunk):
+        # Create a mock dask_client
+        mock_dask_client = MagicMock()
         handler = DaskHandler(dask_client=mock_dask_client)
+        
+        # Create a dummy dataset
         data = np.random.rand(10, 256, 256)
         dataset = xr.Dataset({'data': (['time', 'latitude', 'longitude'], data)})
+        
         chunked_dataset = handler.process_with_dask(dataset)
-        self.assertEqual(chunked_dataset.chunks['latitude'], (256,))
-        self.assertEqual(chunked_dataset.chunks['longitude'], (256,))
+        
+        # Ensure chunk was called with the correct arguments
+        mock_chunk.assert_called_once_with({'time': -1, 'latitude': 256, 'longitude': 256})
+        
+        # Ensure the result is the mock_chunked_dataset
+        self.assertEqual(chunked_dataset, mock_chunk.return_value)
 
-    def no_test_process_without_dask(self):
+    def test_process_without_dask(self):
         handler = DaskHandler()
         data = np.random.rand(10, 256, 256)
         dataset = xr.Dataset({'data': (['time', 'latitude', 'longitude'], data)})
