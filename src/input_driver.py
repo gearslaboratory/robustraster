@@ -25,9 +25,6 @@ class LocalRasterReader(DataReaderInterface):
 
         Parameters:
         - file_path (str): The absolute path to the raster file.
-
-        Attributes:
-        - file_path (str): The absolute path to the raster file being read.
         '''
         self._file_path = file_path
         self._xarray_data = self.read_data()
@@ -43,10 +40,13 @@ class LocalRasterReader(DataReaderInterface):
 class EarthEngineReader(DataReaderInterface):
     def __init__(self, json_key: str = None) -> None:
         """
-        Initialize the EarthEngineReader class.
+        Initialize the EarthEngineReader class. Reads in a service account credentials file (JSON format) that has permission to use the 
+        Earth Engine API. If no file is passed, it will first try to initialize Earth Engine using credentials stored on the machine. If 
+        it can't find the credentials stored on the machine, it will run ee.Authenticate() to create a credentials file to initialize the 
+        Earth Engine API with.
 
         Parameters:
-        - auth_key (str): Earth Engine authentication key. If None, it assumes the user is already authenticated.
+        - json_key (str): Service account JSON credentials file. If None, it assumes the user is already authenticated.
         """
 
         if json_key:
