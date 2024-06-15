@@ -4,7 +4,6 @@ import sys
 import xarray as xr
 import numpy as np
 from unittest.mock import patch, MagicMock
-from dask.distributed import Client, LocalCluster
 
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
@@ -35,7 +34,7 @@ class TestDaskHandler(unittest.TestCase):
             self.assertEqual(kwargs["memory_limit"], '4GB')
             return MagicMock()
 
-        with patch('__main__.LocalCluster', side_effect=side_effect):
+        with patch('initialize_dask.LocalCluster', side_effect=side_effect):
             handler = DaskHandler()
             handler.create_local_cluster()
             self.assertIsNotNone(handler.dask_client)
