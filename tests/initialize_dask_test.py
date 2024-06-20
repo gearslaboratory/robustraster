@@ -138,7 +138,6 @@ class TestDaskHandler(unittest.TestCase):
 
         Test Assertions:
         - assertEqual: Assert that the return value of process_with_dask() is the same as "dataset".
-
         '''
         handler = DaskHandler()
         data = np.random.rand(10, 256, 256)
