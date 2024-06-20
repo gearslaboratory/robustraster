@@ -12,11 +12,28 @@ from initialize_dask import DaskHandler
 
 class TestDaskHandler(unittest.TestCase):
     def test_initialization(self):
+        ''' 
+        Test initializing an attribute "self.dask_client" with a Client object containing (for now) None.
+        The methods below will assign this attribute with a Client object depending on how they choose to
+        configure their Dask environment.
+
+        Test Assertions:
+        - assertIsNotNone: Check if the attribute "self.dask_client" is not None.
+        '''
+        # Test reading raster data successfully
         handler = DaskHandler()
         self.assertIsNone(handler.dask_client)
 
     @patch('initialize_dask.Client')
     def test_create_local_threads(self, mock_client):
+        ''' 
+        Test assigning attribute "self.dask_client" a Client object meant to create a mock Dask Client object 
+        using the threads of the local machine. Uses the @patch decorator to replace dask.distributed.Client
+        with a mock object.
+
+        Test Assertions:
+        - assertIsNotNone: Check if the attribute "self.dask_client" is not None.
+        '''
         handler = DaskHandler()
         handler.create_local_threads()
         mock_client.assert_called_once_with(processes=False)
@@ -26,13 +43,42 @@ class TestDaskHandler(unittest.TestCase):
     @patch('multiprocessing.cpu_count', return_value=4)
     @patch('initialize_dask.Client')
     def test_create_local_cluster(self, mock_client, mock_cpu_count, mock_virtual_memory):
+        ''' 
+        Test assigning attribute "self.dask_client" a Client object meant to create a mock Dask Client object.
+        This mock Client object tests the creation of a local cluster of workers. Uses the @patch decorator to 
+        replace the following:
+        
+        1. @patch('psutil.virtual_memory')
+            This will replace the psutil.virtual_memory method with a mock value of "16GB" meant to test the use
+            of this method.
+        2. @patch('multiprocessing.cpu_count', return_value=4)
+            This will replace the multiprocessing.cpu_count method with a mock return value of 4. This is meant
+            to test the use of this method.
+        3. @patch('initialize_dask.Client')
+            This will replace dask.distributed.Client with a mock object meant to test the use of this method.
+        
+        In order to test the 3 methods mentioned above, another patch is done on dask.distributed.LocalCluster to
+        run the side_effect() method (see docstring for side_effect() below).
+
+        Test Assertions:
+        - assertEqual: Assert the values of "num_workers", "threads_per_worker", and "memory_limit" are of the same
+                       values as the mock objects (see side_effect() method below).
+        - assertIsNotNone: Check if the attribute "self.dask_client" is not None.
+        '''
         mock_virtual_memory.return_value.total = 16 * 1024**3  # Mock 16GB total memory
 
         def side_effect(*args, **kwargs):
+            '''
+            When dask.distributed.LocalCluster is called via handler.create_local_cluster(), replace it with 
+            this method. Tests dask.distributed.LocalCluster using the 3 mock objects created above.
+
+            Test Assertions:
+            - assertEqual: Assert the values of "num_workers", "threads_per_worker", and "memory_limit" are of 
+            the same values as the mock objects. 
+            '''
             self.assertEqual(kwargs["n_workers"], 4)
             self.assertEqual(kwargs["threads_per_worker"], 1)
             self.assertEqual(kwargs["memory_limit"], '4GB')
-            return MagicMock()
 
         with patch('initialize_dask.LocalCluster', side_effect=side_effect):
             handler = DaskHandler()
@@ -42,6 +88,9 @@ class TestDaskHandler(unittest.TestCase):
 
     @patch('initialize_dask.Client')
     def test_connect_to_cloud_cluster(self, mock_client):
+        '''
+        WRITE THIS DOCUMENTATION ONCE I FINISH WRITING THE CODE FOR THE REAL METHOD!11
+        '''
         handler = DaskHandler()
         handler.connect_to_cloud_cluster('tcp://scheduler-address:8786')
         mock_client.assert_called_once_with('tcp://scheduler-address:8786')
@@ -50,6 +99,22 @@ class TestDaskHandler(unittest.TestCase):
     @patch('xarray.Dataset.chunk', return_value=MagicMock())
     @patch('initialize_dask.Client')
     def test_process_with_dask(self, mock_client, mock_chunk):
+        '''
+        Test chunking a xarray.Dataset to convert it to a Dask array. This method patches two other methods using
+        @patch decorator:
+
+        1. @patch('xarray.Dataset.chunk', return_value=MagicMock())
+           This will replace the xarray.Dataset.chunk method that, when called, will return a MagicMock object.
+           This MagicMock object is meant to test the xarray.Dataset.chunk method.
+        
+        2. @patch('initialize_dask.Client')
+           This will replace dask.distributed.Client with a mock object meant to test the use of this method.
+
+        Test Assertions:
+        - assertEqual: Asserts the value of "chunked_dataset" is equal to the return value of "mock_chunk". In 
+                       case, because we are testing with mock objects, the values of each of these variables should
+                       be the same MagicMock objects.
+        '''
         # Create a mock dask_client
         mock_dask_client = MagicMock()
         handler = DaskHandler(dask_client=mock_dask_client)
@@ -66,7 +131,15 @@ class TestDaskHandler(unittest.TestCase):
         # Ensure the result is the mock_chunked_dataset
         self.assertEqual(chunked_dataset, mock_chunk.return_value)
 
-    def no_test_process_without_dask(self):
+    def test_process_without_dask(self):
+        '''
+        Test handling an xarray.Dataset object. In other words, we are not converting the xarray.Dataset into a Dask 
+        array, as we will not be doing any chunking.
+
+        Test Assertions:
+        - assertEqual: Assert that the return value of process_with_dask() is the same as "dataset".
+
+        '''
         handler = DaskHandler()
         data = np.random.rand(10, 256, 256)
         dataset = xr.Dataset({'data': (['time', 'latitude', 'longitude'], data)})
