@@ -3,6 +3,8 @@ import os
 import sys
 import xarray as xr
 import numpy as np
+import dask.array as da
+import dask.dataframe as dd
 from unittest.mock import patch, MagicMock
 
 # Add the src directory to the Python path
@@ -121,18 +123,19 @@ class TestDaskHandler(unittest.TestCase):
         
         # Create a dummy dataset
         data = np.random.rand(10, 256, 256)
-        dataset = xr.Dataset({'data': (['time', 'latitude', 'longitude'], data)})
+        dataset = xr.Dataset({'data': (['time', 'X', 'Y'], data)})
         
         chunked_dataset = handler.process_with_dask(dataset)
         
         # Ensure chunk was called with the correct arguments
-        mock_chunk.assert_called_once_with({'time': -1, 'latitude': 256, 'longitude': 256})
+        mock_chunk.assert_called_once_with({'time': 48, 'X': 512, 'Y': 256})
         
         # Ensure the result is the mock_chunked_dataset
         self.assertEqual(chunked_dataset, mock_chunk.return_value)
 
     def test_process_without_dask(self):
         '''
+        (probably) NOT NEEDED! IF WE AREN'T GOING TO CHUNK THE DATA, WHY DO WE NEED A DASK HANDLER?
         Test handling an xarray.Dataset object. In other words, we are not converting the xarray.Dataset into a Dask 
         array, as we will not be doing any chunking.
 
@@ -144,6 +147,35 @@ class TestDaskHandler(unittest.TestCase):
         dataset = xr.Dataset({'data': (['time', 'latitude', 'longitude'], data)})
         result = handler.process_with_dask(dataset)
         self.assertEqual(result, dataset)
+
+    def test_dataset_to_dask_dataframe(self):
+        '''
+        Test converting a chunked xarray.Dataset to a Dask DataFrame.
+
+        Test Assertions:
+        - assertIsInstance: Check if the result is an instance of dask.dataframe.DataFrame.
+        - assertEqual: Check if the columns of the DataFrame match the variables in the Dataset.
+        '''
+        handler = DaskHandler()
+
+        # Create a sample xarray Dataset with Dask arrays
+        data = da.random.random((10, 256, 256), chunks=(5, 128, 128))
+        data_array = xr.DataArray(data, dims=["time", "latitude", "longitude"])
+        dataset = xr.Dataset({"variable1": data_array})
+
+        # Process the dataset to create chunks
+        chunked_dataset = dataset.chunk({"time": 5, "latitude": 128, "longitude": 128})
+
+        # Convert the chunked xarray Dataset to a Dask DataFrame
+        dask_df = handler.dataset_to_dask_dataframe(chunked_dataset)
+
+        # Check that the result is a Dask DataFrame
+        self.assertIsInstance(dask_df, dd.DataFrame)
+
+        # Check that the Dask DataFrame has the expected columns
+        expected_columns = list(chunked_dataset.to_dask_dataframe().columns)
+        self.assertEqual(list(dask_df.columns), expected_columns)
+
 
 if __name__ == '__main__':
     unittest.main()

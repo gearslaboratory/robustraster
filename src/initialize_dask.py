@@ -1,4 +1,6 @@
 from dask.distributed import Client, LocalCluster
+import dask.array as da
+import dask.dataframe as dd
 import xarray as xr
 import multiprocessing
 import psutil
@@ -51,16 +53,42 @@ class DaskHandler:
         '''
         self.dask_client = Client(scheduler_address)
 
-    def process_with_dask(self, dataset: xr.Dataset) -> xr.Dataset:
+    def process_with_dask(self, dataset: xr.Dataset, **kwargs) -> xr.Dataset:
         '''
         If the dask_client attribute is not None, then chunk the dataset to convert it to a Dask array.
 
         Parameters:
         - dataset (xr.Dataset): An xarray Dataset object that will be chunked.
-
+        
         Returns:
         - xr.Dataset: An xarray dataset object now configured to be a Dask array.
         '''
+
+        # XEE uses this chunk size as the default chunk size to prevent grabbing data above 48 MBs.
+        default_chunks  = {
+            'time': 48,
+            'X': 512,
+            'Y': 256
+        }
+
+        # Extract chunk sizes from kwargs if provided
+        chunk_sizes = kwargs.pop('chunks', default_chunks)
+
         if self.dask_client:
-            return dataset.chunk({'time': -1, 'latitude': 256, 'longitude': 256})
+            return dataset.chunk(chunk_sizes, **kwargs)
         return dataset
+    
+    def dataset_to_dask_dataframe(self, dataset: xr.Dataset) -> dd.DataFrame:
+        '''
+        Convert a chunked xarray Dataset to a Dask DataFrame using xarray's built-in method.
+
+        Parameters:
+        - dataset (xr.Dataset): A chunked xarray Dataset to be converted.
+
+        Returns:
+        - dd.DataFrame: A Dask DataFrame converted from the xarray Dataset.
+        '''
+        if not isinstance(dataset, xr.Dataset):
+            raise TypeError("Input must be an xarray Dataset.")
+        
+        return dataset.to_dask_dataframe()
