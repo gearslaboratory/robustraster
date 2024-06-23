@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
-from google.auth.exceptions import RefreshError
+from earth_engine_auth import initialize_earth_engine
 import xarray as xr
 import rasterio
 import rioxarray
 import ee
-import json
 
 class DataReaderInterface(ABC):
     @abstractmethod
@@ -48,21 +47,7 @@ class EarthEngineReader(DataReaderInterface):
         Parameters:
         - json_key (str): Service account JSON credentials file. If None, it assumes the user is already authenticated.
         """
-
-        if json_key:
-            with open(json_key, 'r') as file:
-                data = json.load(file)
-            credentials = ee.ServiceAccountCredentials(data["client_email"], json_key)
-            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
-        else:
-            try:
-                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
-            except ee.EEException:
-                ee.Authenticate()
-                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
-            except RefreshError:
-                ee.Authenticate()
-                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
+        initialize_earth_engine(json_key)
         
         #self._xarray_data = self._read_data(parameters)
     

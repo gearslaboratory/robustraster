@@ -44,10 +44,10 @@ class TestDaskHandler(unittest.TestCase):
     @patch('psutil.virtual_memory')
     @patch('multiprocessing.cpu_count', return_value=4)
     @patch('initialize_dask.Client')
-    def test_create_local_cluster(self, mock_client, mock_cpu_count, mock_virtual_memory):
+    def test_create_local_cluster_defaults(self, mock_client, mock_cpu_count, mock_virtual_memory):
         ''' 
         Test assigning attribute "self.dask_client" a Client object meant to create a mock Dask Client object.
-        This mock Client object tests the creation of a local cluster of workers. Uses the @patch decorator to 
+        This mock Client object tests the creation of a local cluster of workers with default settings. Uses the @patch decorator to 
         replace the following:
         
         1. @patch('psutil.virtual_memory')
@@ -63,7 +63,7 @@ class TestDaskHandler(unittest.TestCase):
         run the side_effect() method (see docstring for side_effect() below).
 
         Test Assertions:
-        - assertEqual: Assert the values of "num_workers", "threads_per_worker", and "memory_limit" are of the same
+        - assertEqual: Assert the values of "n_workers", "threads_per_worker", and "memory_limit" are of the same
                        values as the mock objects (see side_effect() method below).
         - assertIsNotNone: Check if the attribute "self.dask_client" is not None.
         '''
@@ -75,7 +75,7 @@ class TestDaskHandler(unittest.TestCase):
             this method. Tests dask.distributed.LocalCluster using the 3 mock objects created above.
 
             Test Assertions:
-            - assertEqual: Assert the values of "num_workers", "threads_per_worker", and "memory_limit" are of 
+            - assertEqual: Assert the values of "n_workers", "threads_per_worker", and "memory_limit" are of 
             the same values as the mock objects. 
             '''
             self.assertEqual(kwargs["n_workers"], 4)
@@ -87,6 +87,25 @@ class TestDaskHandler(unittest.TestCase):
             handler.create_local_cluster()
             self.assertIsNotNone(handler.dask_client)
             mock_client.assert_called_once()
+    
+    @patch('initialize_dask.Client')
+    @patch('initialize_dask.LocalCluster')
+    def test_create_local_cluster_with_kwargs(self, mock_local_cluster, mock_client):
+        '''
+        Test assigning attribute "self.dask_client" a Client object meant to create a mock Dask Client object.
+        This mock Client object tests the creation of a local cluster of workers with user-provided kwargs.
+
+        Test Assertions:
+        - assertEqual: Assert the values of "n_workers", "threads_per_worker", and "memory_limit" are of the same
+                       values as the user-provided kwargs.
+        - assertIsNotNone: Check if the attribute "self.dask_client" is not None.
+        '''
+        handler = DaskHandler()
+        handler.create_local_cluster(n_workers=2, threads_per_worker=2, memory_limit='2GB')
+        
+        mock_local_cluster.assert_called_once_with(n_workers=2, threads_per_worker=2, memory_limit='2GB')
+        self.assertIsNotNone(handler.dask_client)
+        mock_client.assert_called_once()
 
     @patch('initialize_dask.Client')
     def test_connect_to_cloud_cluster(self, mock_client):
