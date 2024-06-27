@@ -12,6 +12,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from input_driver import LocalRasterReader, EarthEngineReader
+from earth_engine_auth import initialize_earth_engine
 
 class TestLocalRasterReader(unittest.TestCase):
     ''' 
@@ -103,20 +104,7 @@ class TestLocalRasterReader(unittest.TestCase):
 class TestEarthEngineReader(unittest.TestCase):
     def setUp(self, json_key=None):
         ''' Set up the unit tests for all methods.'''
-        if json_key:
-            with open(json_key, 'r') as file:
-                data = json.load(file)
-            credentials = ee.ServiceAccountCredentials(data["client_email"], json_key)
-            ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
-        else:
-            try:
-                ee.Initialize()
-            except ee.EEException:
-                ee.Authenticate()
-                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
-            except RefreshError:
-                ee.Authenticate()
-                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
+        initialize_earth_engine(json_key)
 
         parameters = {
             'collection': None,
@@ -163,6 +151,34 @@ class TestEarthEngineReader(unittest.TestCase):
             reader = EarthEngineReader(json_key=None)
             reader.read_data(parameters)
         self.assertTrue(f"Unrecognized argument type" in str(context.exception))
+        
+    def test_map_function_applied(self):
+        '''
+        Test if the map_function is applied to the ImageCollection.
+
+        Test Assertions:
+        - assertTrue if the map_function is applied correctly.
+        '''
+        # Define a simple map function
+        def map_function(image):
+            return image.add(10)
+
+        parameters = {
+            'collection': 'MODIS/006/MOD13A2',
+            'start_date': '2023-01-01',
+            'end_date': '2023-12-31',
+            'geometry': ee.Geometry.Rectangle([-122.5, 37.0, -121.5, 38.0]),
+            'map_function': map_function
+        }
+
+        reader = EarthEngineReader(json_key=None)
+        ee_collection = reader._construct_ee_collection(parameters)
+        
+        # Retrieve the first image from the collection
+        first_image = ee_collection.first().getInfo()
+
+        # Check if the map_function has been applied
+        self.assertTrue(first_image is not None, "Map function was not applied correctly.")
 
     def test_read_data(self):
         '''

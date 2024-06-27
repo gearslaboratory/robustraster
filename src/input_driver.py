@@ -67,6 +67,7 @@ class EarthEngineReader(DataReaderInterface):
         end_date = parameters.get('end_date', None)
         geometry = parameters.get('geometry', None)
         # Cloud masking?
+        map_function = parameters.get('map_function', None)
 
         if collection is None:
             raise ee.EEException("Earth Engine collection was not provided.")
@@ -79,11 +80,14 @@ class EarthEngineReader(DataReaderInterface):
                 ee_collection = ee_collection.filterDate(start_date, end_date)
             if geometry:
                 ee_collection = ee_collection.filterBounds(geometry)
+
+            if map_function and callable(map_function):
+                ee_collection = ee_collection.map(map_function)
             
             return ee_collection
         except ee.EEException:
             raise ee.EEException(f"Unrecognized argument type {type(collection)} to convert to an ImageCollection.")
-    
+
     def read_data(self, parameters) -> xr.Dataset:
         """
         Read Earth Engine data and convert it to xarray format.

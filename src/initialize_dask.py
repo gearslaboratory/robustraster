@@ -4,6 +4,8 @@ import dask.dataframe as dd
 import xarray as xr
 import multiprocessing
 import psutil
+import json
+import ee
 
 class DaskHandler:
     def __init__(self, dask_client: Client = None) -> None:
@@ -77,7 +79,14 @@ class DaskHandler:
         - xr.Dataset: An xarray dataset object now configured to be a Dask array.
         '''
 
-        # XEE uses this chunk size as the default chunk size to prevent grabbing data above 48 MBs.
+        # So the payload size in Earth Engine says its 10MB, but xee found through trial and error 48 MBs.
+        # When using ee.data.computePixels (which xee using in the backend), it sends a request object. 
+        # This object will also contain the chunk size. To compute the size of the chunk, you can multiple 
+        # each dimension and then multiply by the dtype size (if the pixels are float64, then 8 bytes). 
+        # This, including the other aspects of the request object (filtering by date, cloud mask, etc.) 
+        # would add up to your total payload size. To compute the bytes say filter by date takes up, you 
+        # add up the characters, including white space, and multiply it by 1 byte (assuming the characters
+        # are UTF-8 encoded).
         default_chunks  = {
             'time': 48,
             'X': 512,
@@ -105,3 +114,27 @@ class DaskHandler:
             raise TypeError("Input must be an xarray Dataset.")
         
         return dataset.to_dask_dataframe()
+    
+    def initialize_earth_engine_dask_workers(self, json_key: str = None):
+        if json_key:
+            with open(json_key, 'r') as file:
+                data = json.load(file)
+            credentials = ee.ServiceAccountCredentials(data["client_email"], json_key)
+            initialize_dict = {
+                'credentials': credentials,
+                'opt_url': 'https://earthengine-highvolume.googleapis.com'
+            }
+            self.dask_client.run(ee.Initialize, **initialize_dict)
+        else:
+            initialize_dict = {
+            'opt_url': 'https://earthengine-highvolume.googleapis.com',
+            }
+            self.dask_client.run(ee.Initialize, **initialize_dict)
+            #try:
+            #    client.run(ee.Initialize, **initialize_dict)
+            #except ee.EEException:
+            #    client.run(ee.Authenticate)
+            #    client.run(ee.Initialize, **initialize_dict)
+            #except RefreshError:
+            #    client.run(ee.Authenticate)
+            #    client.run(ee.Initialize, **initialize_dict)
