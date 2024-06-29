@@ -7,7 +7,7 @@ import ee
 
 class DataReaderInterface(ABC):
     @abstractmethod
-    def read_data(self):
+    def _read_data(self):
         """
         Abstract method to read raster data from the source.
         This method should be implemented in the derived classes.
@@ -28,7 +28,7 @@ class LocalRasterReader(DataReaderInterface):
         self._file_path = file_path
         self._xarray_data = self.read_data()
     
-    def read_data(self) -> xr.Dataset:
+    def _read_data(self) -> xr.Dataset:
         try:
             with rioxarray.open_rasterio(self._file_path, band_as_variable=True) as xarray_data:
                 return xarray_data
@@ -37,7 +37,7 @@ class LocalRasterReader(DataReaderInterface):
             raise
 
 class EarthEngineReader(DataReaderInterface):
-    def __init__(self, json_key: str = None) -> None:
+    def __init__(self, parameters: dict, json_key: str = None) -> None:
         """
         Initialize the EarthEngineReader class. Reads in a service account credentials file (JSON format) that has permission to use the 
         Earth Engine API. If no file is passed, it will first try to initialize Earth Engine using credentials stored on the machine. If 
@@ -45,11 +45,16 @@ class EarthEngineReader(DataReaderInterface):
         Earth Engine API with.
 
         Parameters:
+        - parameters (dict): A dictionary containing parameters for the Earth Engine data.
         - json_key (str): Service account JSON credentials file. If None, it assumes the user is already authenticated.
         """
+
         initialize_earth_engine(json_key)
-        
-        #self._xarray_data = self._read_data(parameters)
+        self._xarray_data = self._read_data(parameters)
+    
+    @property
+    def dataset(self):
+        return self._xarray_data
     
     def _construct_ee_collection(self, parameters: dict) -> ee.ImageCollection:
         """
@@ -88,7 +93,7 @@ class EarthEngineReader(DataReaderInterface):
         except ee.EEException:
             raise ee.EEException(f"Unrecognized argument type {type(collection)} to convert to an ImageCollection.")
 
-    def read_data(self, parameters) -> xr.Dataset:
+    def _read_data(self, parameters) -> xr.Dataset:
         """
         Read Earth Engine data and convert it to xarray format.
 
@@ -104,6 +109,22 @@ class EarthEngineReader(DataReaderInterface):
         scale = parameters.get('scale', None)
         geometry = parameters.get('geometry', None)
         crs = parameters.get('crs', None)
+        # So the payload size in Earth Engine says its 10MB, but xee found through trial and error 48 MBs.
+        # When using ee.data.computePixels (which xee using in the backend), it sends a request object. 
+        # This object will also contain the chunk size. To compute the size of the chunk, you can multiple 
+        # each dimension and then multiply by the dtype size (if the pixels are float64, then 8 bytes). 
+        # This, including the other aspects of the request object (filtering by date, cloud mask, etc.) 
+        # would add up to your total payload size. To compute the bytes say filter by date takes up, you 
+        # add up the characters, including white space, and multiply it by 1 byte (assuming the characters
+        # are UTF-8 encoded).
+        default_chunks  = {
+            'time': 48,
+            'X': 512,
+            'Y': 256
+        }
+
+        # Extract chunk sizes from kwargs if provided
+        chunk_size = parameters.pop('chunks', default_chunks)
 
         # Fetch data from Earth Engine
         xarray_data = xr.open_dataset(
@@ -111,6 +132,7 @@ class EarthEngineReader(DataReaderInterface):
             engine='ee', 
             crs=crs, 
             scale=scale,
-            geometry=geometry)
+            geometry=geometry,
+            chunks=chunk_size)
         
         return xarray_data

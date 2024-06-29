@@ -115,6 +115,8 @@ class TestEarthEngineReader(unittest.TestCase):
             'scale': None
         }
 
+        #self._reader = EarthEngineReader(parameters, json_key)
+
     def test_construct_ee_collection_no_collection(self):
         '''
         Test if no ImageCollection is passed.
@@ -129,8 +131,8 @@ class TestEarthEngineReader(unittest.TestCase):
             'geometry': ee.Geometry.Point(-122.082, 37.42)
         }
         with self.assertRaises(ee.EEException) as context:
-            reader = EarthEngineReader(json_key=None)
-            reader.read_data(parameters)
+            reader = EarthEngineReader(parameters, json_key=None)
+            #reader.read_data(parameters)
         self.assertTrue(f"Earth Engine collection was not provided." in str(context.exception))
     
     def test_construct_ee_collection_invalid_collection_type(self):
@@ -148,8 +150,8 @@ class TestEarthEngineReader(unittest.TestCase):
             'geometry': ee.Geometry.Point(-122.082, 37.42)
         }
         with self.assertRaises(ee.EEException) as context:
-            reader = EarthEngineReader(json_key=None)
-            reader.read_data(parameters)
+            reader = EarthEngineReader(parameters, json_key=None)
+            #reader.read_data(parameters)
         self.assertTrue(f"Unrecognized argument type" in str(context.exception))
         
     def test_map_function_applied(self):
@@ -164,14 +166,14 @@ class TestEarthEngineReader(unittest.TestCase):
             return image.add(10)
 
         parameters = {
-            'collection': 'MODIS/006/MOD13A2',
+            'collection': 'MODIS/061/MOD13A2',
             'start_date': '2023-01-01',
             'end_date': '2023-12-31',
             'geometry': ee.Geometry.Rectangle([-122.5, 37.0, -121.5, 38.0]),
             'map_function': map_function
         }
 
-        reader = EarthEngineReader(json_key=None)
+        reader = EarthEngineReader(parameters, json_key=None)
         ee_collection = reader._construct_ee_collection(parameters)
         
         # Retrieve the first image from the collection
@@ -197,9 +199,9 @@ class TestEarthEngineReader(unittest.TestCase):
             'scale': 0.25
         }
         # Test reading raster data successfully
-        reader = EarthEngineReader(json_key=None)
-        #xarray_data = reader._xarray_data
-        xarray_data = reader.read_data(parameters)
+        reader = EarthEngineReader(parameters, json_key=None)
+        xarray_data = reader._xarray_data
+        #xarray_data = reader.read_data(parameters)
 
         # Assert that xarray_data is not None and is an instance of xr.Dataset.
         self.assertIsNotNone(xarray_data)
