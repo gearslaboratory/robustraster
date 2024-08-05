@@ -1,4 +1,5 @@
 import dask.dataframe as dd
+from dask.distributed import performance_report
 
 class UserDefinedFunctionTuner:
     def __init__(self, dataframe: dd.DataFrame):
@@ -20,4 +21,7 @@ class UserDefinedFunctionTuner:
             raise ValueError("The provided function must be callable.")
         
         result = self.dataframe.map_partitions(func, *args, **kwargs)
-        return result.persist()
+
+        report_name="report"
+        with performance_report(filename=f"{report_name}.html"):
+            result.compute()
