@@ -11,7 +11,7 @@ import sys
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from input_driver import LocalRasterReader, EarthEngineReader
+from input_driver import LocalRasterReader, EarthEngineData
 from earth_engine_auth import initialize_earth_engine
 
 class TestLocalRasterReader(unittest.TestCase):
@@ -101,7 +101,7 @@ class TestLocalRasterReader(unittest.TestCase):
             LocalRasterReader(self.temp_invalid_file)
         self.assertTrue("not recognized as a supported file format" in str(context.exception))
 
-class TestEarthEngineReader(unittest.TestCase):
+class TestEarthEngineData(unittest.TestCase):
     def setUp(self, json_key=None):
         ''' Set up the unit tests for all methods.'''
         initialize_earth_engine(json_key)
@@ -115,7 +115,7 @@ class TestEarthEngineReader(unittest.TestCase):
             'scale': None
         }
 
-        #self._reader = EarthEngineReader(parameters, json_key)
+        #self._reader = EarthEngineData(parameters, json_key)
 
     def test_construct_ee_collection_no_collection(self):
         '''
@@ -131,7 +131,7 @@ class TestEarthEngineReader(unittest.TestCase):
             'geometry': ee.Geometry.Point(-122.082, 37.42)
         }
         with self.assertRaises(ee.EEException) as context:
-            reader = EarthEngineReader(parameters, json_key=None)
+            reader = EarthEngineData(parameters, json_key=None)
             #reader.read_data(parameters)
         self.assertTrue(f"Earth Engine collection was not provided." in str(context.exception))
     
@@ -150,7 +150,7 @@ class TestEarthEngineReader(unittest.TestCase):
             'geometry': ee.Geometry.Point(-122.082, 37.42)
         }
         with self.assertRaises(ee.EEException) as context:
-            reader = EarthEngineReader(parameters, json_key=None)
+            reader = EarthEngineData(parameters, json_key=None)
             #reader.read_data(parameters)
         self.assertTrue(f"Unrecognized argument type" in str(context.exception))
         
@@ -173,7 +173,7 @@ class TestEarthEngineReader(unittest.TestCase):
             'map_function': map_function
         }
 
-        reader = EarthEngineReader(parameters, json_key=None)
+        reader = EarthEngineData(parameters, json_key=None)
         ee_collection = reader._construct_ee_collection(parameters)
         
         # Retrieve the first image from the collection
@@ -199,7 +199,7 @@ class TestEarthEngineReader(unittest.TestCase):
             'scale': 0.25
         }
         # Test reading raster data successfully
-        reader = EarthEngineReader(parameters, json_key=None)
+        reader = EarthEngineData(parameters, json_key=None)
         xarray_data = reader._xarray_data
         #xarray_data = reader.read_data(parameters)
 

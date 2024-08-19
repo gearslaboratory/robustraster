@@ -36,10 +36,10 @@ class LocalRasterReader(DataReaderInterface):
             print(f"Error reading raster data from {e}:")
             raise
 
-class EarthEngineReader(DataReaderInterface):
+class EarthEngineData(DataReaderInterface):
     def __init__(self, parameters: dict, json_key: str = None) -> None:
         """
-        Initialize the EarthEngineReader class. Reads in a service account credentials file (JSON format) that has permission to use the 
+        Initialize the EarthEngineData class. Reads in a service account credentials file (JSON format) that has permission to use the 
         Earth Engine API. If no file is passed, it will first try to initialize Earth Engine using credentials stored on the machine. If 
         it can't find the credentials stored on the machine, it will run ee.Authenticate() to create a credentials file to initialize the 
         Earth Engine API with.
@@ -55,9 +55,12 @@ class EarthEngineReader(DataReaderInterface):
 
         initialize_earth_engine(json_key)
         self._xarray_data = self._read_data(parameters)
-        #chunk_size = self._compute_chunk_sizes()
-        #xarray_data_chunked = self._xarray_data.chunk(chunk_size)
-        #self._xarray_data = xarray_data_chunked
+
+        # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
+        # machine's storage array.
+        chunk_size = self._compute_chunk_sizes()
+        xarray_data_chunked = self._xarray_data.chunk(chunk_size)
+        self._xarray_data = xarray_data_chunked
     
     @property
     def dataset(self):
@@ -126,10 +129,10 @@ class EarthEngineReader(DataReaderInterface):
         """
         # Extract parameters with defaults
         collection = parameters.get('collection', None)
+        bands = parameters.get('bands', None)
         start_date = parameters.get('start_date', None)
         end_date = parameters.get('end_date', None)
         geometry = parameters.get('geometry', None)
-        # Cloud masking?
         map_function = parameters.get('map_function', None)
 
         if collection is None:
@@ -143,11 +146,13 @@ class EarthEngineReader(DataReaderInterface):
                 ee_collection = ee_collection.filterDate(start_date, end_date)
             if geometry:
                 ee_collection = ee_collection.filterBounds(geometry)
+            if bands:
+                ee_collection = ee_collection.select(bands)
 
             if map_function and callable(map_function):
                 ee_collection = ee_collection.map(map_function)
             
-            return ee_collection.select(['SR_B4', 'SR_B5'])
+            return ee_collection
         except ee.EEException:
             raise ee.EEException(f"Unrecognized argument type {type(collection)} to convert to an ImageCollection.")
 
@@ -177,7 +182,7 @@ class EarthEngineReader(DataReaderInterface):
         # would add up to your total payload size. To compute the bytes say filter by date takes up, you 
         # add up the characters, including white space, and multiply it by 1 byte (assuming the characters
         # are UTF-8 encoded).
-        default_chunks  = {
+        '''default_chunks  = {
             'time': 48,
             'X': 512,
             'Y': 256
@@ -185,15 +190,14 @@ class EarthEngineReader(DataReaderInterface):
 
         # Extract chunk sizes from kwargs if provided
         chunk_size = parameters.pop('chunks', default_chunks)
-
+        '''
         # Fetch data from Earth Engine
         xarray_data = xr.open_dataset(
             ee_collection, 
             engine='ee', 
             crs=crs, 
             scale=scale,
-            geometry=geometry,
-            chunks=chunk_size)
+            geometry=geometry)
         
         # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
         # machine's storage array.

@@ -5,3 +5,5 @@ tests/02-dataframe.ipynb
 experiment_code/calfuels-d7ee3964fc3f.json
 src/__pycache__/initialize_dask.cpython-39.pyc
 src/__pycache__/input_driver.cpython-39.pyc
+src/__pycache__/earth_engine_auth.cpython-39.pyc
+src/__pycache__/udf_tuner.cpython-39.pyc

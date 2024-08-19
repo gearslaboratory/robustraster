@@ -64,7 +64,7 @@ class DaskHandler:
 
     def connect_to_cloud_cluster(self, scheduler_address: str):
         '''
-         Store dask_client attribute with a Dask Client object configured (WIP) to connect to a Cloud service.
+        Store dask_client attribute with a Dask Client object configured (WIP) to connect to a Cloud service.
         '''
         self.dask_client = Client(scheduler_address)
 
