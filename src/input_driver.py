@@ -146,11 +146,10 @@ class EarthEngineData(DataReaderInterface):
                 ee_collection = ee_collection.filterDate(start_date, end_date)
             if geometry:
                 ee_collection = ee_collection.filterBounds(geometry)
-            if bands:
-                ee_collection = ee_collection.select(bands)
-
             if map_function and callable(map_function):
                 ee_collection = ee_collection.map(map_function)
+            if bands:
+                ee_collection = ee_collection.select(bands)
             
             return ee_collection
         except ee.EEException:

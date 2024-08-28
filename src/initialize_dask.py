@@ -2,10 +2,12 @@ from dask.distributed import Client, LocalCluster
 import dask.array as da
 import dask.dataframe as dd
 import xarray as xr
+from dask_plugins import EEPlugin
 import multiprocessing
 import psutil
 import json
 import ee
+import os
 
 class DaskHandler:
     def __init__(self, dask_client: Client = None) -> None:
@@ -99,22 +101,41 @@ class DaskHandler:
         if self.dask_client:
             return dataset.chunk(chunk_sizes, **kwargs)
         return dataset
-    
-    def dataset_to_dask_dataframe(self, dataset: xr.Dataset) -> dd.DataFrame:
-        '''
-        Convert a chunked xarray Dataset to a Dask DataFrame using xarray's built-in method.
 
-        Parameters:
-        - dataset (xr.Dataset): A chunked xarray Dataset to be converted.
+    def initialize_ee_on_workers(self, json_key=None):
+        ee_plugin = EEPlugin(json_key)
+        #self.dask_client.register_plugin(ee_plugin)
 
-        Returns:
-        - dd.DataFrame: A Dask DataFrame converted from the xarray Dataset.
-        '''
-        if not isinstance(dataset, xr.Dataset):
-            raise TypeError("Input must be an xarray Dataset.")
-        
-        return dataset.to_dask_dataframe()
-    
+
+
+
+
+
+
+
+
+'''
+    def initialize_earth_engine_worker(json_key=None):
+        try:
+            if json_key:
+                with open(json_key, 'r') as file:
+                    data = json.load(file)
+                credentials = ee.ServiceAccountCredentials(data["client_email"], json_key)
+                ee.Initialize(credentials, opt_url='https://earthengine-highvolume.googleapis.com')
+            else:
+                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
+        except ee.EEException as e:
+            if "Please authorize access to your Earth Engine account" in str(e):
+                ee.Authenticate()
+                ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
+
+    def initialize_earth_engine_dask_workers(self, json_key: str = None):
+        try:
+            # Initialize Earth Engine on all workers
+            self.dask_client.run_on_scheduler(self.initialize_earth_engine_worker, json_key=json_key)
+        except ee.EEException as e:
+            print(f"Failed to initialize Earth Engine: {e}")
+
     def initialize_earth_engine_dask_workers(self, json_key: str = None):
         if json_key:
             with open(json_key, 'r') as file:
@@ -129,7 +150,14 @@ class DaskHandler:
             initialize_dict = {
             'opt_url': 'https://earthengine-highvolume.googleapis.com',
             }
-            self.dask_client.run(ee.Initialize, **initialize_dict)
+            try:
+                self.dask_client.run(ee.Initialize, **initialize_dict)
+            except ee.EEException as e:
+                if "Please authorize access to your Earth Engine account" in str(e):
+                    #self.dask_client.run(ee.Authenticate)
+                    # I think running ee.Authenticate on a client is good?
+                    ee.Authenticate()
+                    self.dask_client.run(ee.Initialize, **initialize_dict)
             #try:
             #    client.run(ee.Initialize, **initialize_dict)
             #except ee.EEException:
@@ -138,3 +166,4 @@ class DaskHandler:
             #except RefreshError:
             #    client.run(ee.Authenticate)
             #    client.run(ee.Initialize, **initialize_dict)
+    '''
