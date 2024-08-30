@@ -1,0 +1,11 @@
+xee==0.0.13
+rioxarray==0.15.0
+dask==2024.8.1
+distributed==2024.8.1
+cloudpickle==3.0.0
+lz4==4.3.3
+numpy==2.0.1
+pandas==2.2.2
+tornado==6.4.1
+earthengine-api==0.1.417 
+docker==7.1.0
