@@ -42,7 +42,7 @@ class UserDefinedFunction:
         )
         
         return template
-    
+
     def _user_function_wrapper(self, ds, user_func, *args, **kwargs):
         """
         Apply a user-defined function to the Dask DataFrame.
@@ -55,22 +55,34 @@ class UserDefinedFunction:
         Returns:
         - result: the result of applying the function to the dataframe.
         """
-
+        
+        # Look into xarray.Dataset.from_dataframe
+        # Look into loading it directly to Dask b/c of warning below.
+        # UserWarning: Sending large graph of size 2.15 GiB.
+        # this may cause some slowdown.
+        # Consider loading the data with Dask directly
+        # or using futures or delayed objects to embed the data into the graph without repetition.
+        # See also https://docs.dask.org/en/stable/best-practices.html#load-data-with-dask for more information.
         df_input = ds.to_dataframe().reset_index()
         df_output = user_func(df_input, *args, **kwargs)
         df_output = df_output.set_index(list(ds.dims))
         ds_output = df_output.to_xarray()
         return ds_output
+        
     
     def apply_user_function(self, ds, user_func, *args, **kwargs):
         if not callable(user_func):
             raise ValueError("The provided function must be callable.")
-        
+        '''
         template = self._generate_template_xarray(ds, user_func)
         result = xr.map_blocks(self._user_function_wrapper, 
                                ds, 
                                args=(user_func,) + args, 
                                kwargs=kwargs, 
                                template=template)
-        
+        '''
+        result = xr.map_blocks(self._user_function_wrapper, 
+                               ds, 
+                               args=(user_func,) + args, 
+                               kwargs=kwargs)
         return result

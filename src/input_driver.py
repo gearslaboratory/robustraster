@@ -58,9 +58,9 @@ class EarthEngineData(DataReaderInterface):
 
         # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
         # machine's storage array.
-        chunk_size = self._compute_chunk_sizes()
-        xarray_data_chunked = self._xarray_data.chunk(chunk_size)
-        self._xarray_data = xarray_data_chunked
+        #chunk_size = self._compute_chunk_sizes()
+        #xarray_data_chunked = self._xarray_data.chunk(chunk_size)
+        #self._xarray_data = xarray_data_chunked
     
     @property
     def dataset(self):
@@ -190,13 +190,21 @@ class EarthEngineData(DataReaderInterface):
         # Extract chunk sizes from kwargs if provided
         chunk_size = parameters.pop('chunks', default_chunks)
         '''
+
+        chunk_size  = {
+            'time': 48,
+            'X': 512,
+            'Y': 256
+        }
+        
         # Fetch data from Earth Engine
         xarray_data = xr.open_dataset(
             ee_collection, 
             engine='ee', 
             crs=crs, 
             scale=scale,
-            geometry=geometry)
+            geometry=geometry,
+            chunks=chunk_size)
         
         # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
         # machine's storage array.

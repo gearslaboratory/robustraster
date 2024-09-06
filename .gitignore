@@ -7,3 +7,11 @@ src/__pycache__/initialize_dask.cpython-39.pyc
 src/__pycache__/input_driver.cpython-39.pyc
 src/__pycache__/earth_engine_auth.cpython-39.pyc
 src/__pycache__/udf_tuner.cpython-39.pyc
+experiment_code/ee.ipynb
+src/dask_plugins.py
+src/input_driver.py
+src/udf_tuner.py
+src/__pycache__/dask_plugins.cpython-310.pyc
+src/__pycache__/earth_engine_auth.cpython-310.pyc
+src/__pycache__/input_driver.cpython-310.pyc
+src/__pycache__/udf_tuner.cpython-310.pyc
