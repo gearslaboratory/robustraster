@@ -29,6 +29,7 @@ click==8.1.7
     #   click-plugins
     #   cligj
     #   dask
+    #   dask-memusage
     #   distributed
     #   rasterio
 click-plugins==1.1.1
@@ -52,10 +53,13 @@ dask[array,complete,dataframe,diagnostics,distributed]==2024.8.1
     #   xarray
 dask-expr==1.1.11
     # via dask
+dask-memusage==1.1
+    # via -r requirements.txt
 distributed==2024.8.1
     # via
     #   -r requirements.txt
     #   dask
+    #   dask-memusage
 docker==7.1.0
     # via -r requirements.txt
 earthengine-api==0.1.417
@@ -69,7 +73,7 @@ google-api-core==2.19.2
     #   google-api-python-client
     #   google-cloud-core
     #   google-cloud-storage
-google-api-python-client==2.143.0
+google-api-python-client==2.145.0
     # via earthengine-api
 google-auth==2.34.0
     # via
@@ -102,7 +106,7 @@ httplib2==0.22.0
     #   google-auth-httplib2
 idna==3.8
     # via requests
-importlib-metadata==8.4.0
+importlib-metadata==8.5.0
     # via dask
 jinja2==3.1.4
     # via
@@ -119,7 +123,7 @@ lz4==4.3.3
     #   dask
 markupsafe==2.1.5
     # via jinja2
-msgpack==1.0.8
+msgpack==1.1.0
     # via distributed
 netcdf4==1.7.1.post2
     # via -r requirements.txt
@@ -157,7 +161,7 @@ pillow==10.4.0
     # via bokeh
 proto-plus==1.24.0
     # via google-api-core
-protobuf==5.28.0
+protobuf==5.28.1
     # via
     #   google-api-core
     #   googleapis-common-protos
@@ -170,11 +174,11 @@ pyarrow==17.0.0
     #   dask-expr
 pyarrow-hotfix==0.6
     # via dask
-pyasn1==0.6.0
+pyasn1==0.6.1
     # via
     #   pyasn1-modules
     #   rsa
-pyasn1-modules==0.4.0
+pyasn1-modules==0.4.1
     # via google-auth
 pyparsing==3.1.4
     # via
@@ -186,7 +190,7 @@ pyproj==3.6.1
     #   xee
 python-dateutil==2.9.0.post0
     # via pandas
-pytz==2024.1
+pytz==2024.2
     # via pandas
 pyyaml==6.0.2
     # via
@@ -232,7 +236,7 @@ urllib3==2.2.2
     #   distributed
     #   docker
     #   requests
-xarray[parallel]==2024.7.0
+xarray[parallel]==2024.9.0
     # via
     #   rioxarray
     #   xee

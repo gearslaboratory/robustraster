@@ -16,3 +16,4 @@ src/__pycache__/earth_engine_auth.cpython-310.pyc
 src/__pycache__/input_driver.cpython-310.pyc
 src/__pycache__/udf_tuner.cpython-310.pyc
 experiment_code/saved_on_disk.nc
+experiment_code/memusage.csv
