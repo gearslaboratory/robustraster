@@ -10,4 +10,6 @@ tornado==6.4.1
 earthengine-api==0.1.417 
 docker==7.1.0
 netCDF4==1.7.1.post2
-dask-memusage==1.1
+beautifulsoup4==4.12.3 
+lxml==5.3.0 
+soupsieve==2.6

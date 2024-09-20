@@ -29,7 +29,6 @@ click==8.1.7
     #   click-plugins
     #   cligj
     #   dask
-    #   dask-memusage
     #   distributed
     #   rasterio
 click-plugins==1.1.1
@@ -53,13 +52,10 @@ dask[array,complete,dataframe,diagnostics,distributed]==2024.8.1
     #   xarray
 dask-expr==1.1.11
     # via dask
-dask-memusage==1.1
-    # via -r requirements.txt
 distributed==2024.8.1
     # via
     #   -r requirements.txt
     #   dask
-    #   dask-memusage
 docker==7.1.0
     # via -r requirements.txt
 earthengine-api==0.1.417
@@ -68,14 +64,14 @@ earthengine-api==0.1.417
     #   xee
 fsspec==2024.9.0
     # via dask
-google-api-core==2.19.2
+google-api-core==2.20.0
     # via
     #   google-api-python-client
     #   google-cloud-core
     #   google-cloud-storage
-google-api-python-client==2.145.0
+google-api-python-client==2.146.0
     # via earthengine-api
-google-auth==2.34.0
+google-auth==2.35.0
     # via
     #   earthengine-api
     #   google-api-core
@@ -104,7 +100,7 @@ httplib2==0.22.0
     #   earthengine-api
     #   google-api-python-client
     #   google-auth-httplib2
-idna==3.8
+idna==3.10
     # via requests
 importlib-metadata==8.5.0
     # via dask
@@ -161,7 +157,7 @@ pillow==10.4.0
     # via bokeh
 proto-plus==1.24.0
     # via google-api-core
-protobuf==5.28.1
+protobuf==5.28.2
     # via
     #   google-api-core
     #   googleapis-common-protos
@@ -231,7 +227,7 @@ tzdata==2024.1
     # via pandas
 uritemplate==4.1.1
     # via google-api-python-client
-urllib3==2.2.2
+urllib3==2.2.3
     # via
     #   distributed
     #   docker
@@ -246,7 +242,7 @@ xyzservices==2024.9.0
     # via bokeh
 zict==3.0.0
     # via distributed
-zipp==3.20.1
+zipp==3.20.2
     # via importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:

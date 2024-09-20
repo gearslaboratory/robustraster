@@ -17,3 +17,6 @@ src/__pycache__/input_driver.cpython-310.pyc
 src/__pycache__/udf_tuner.cpython-310.pyc
 experiment_code/saved_on_disk.nc
 experiment_code/memusage.csv
+experiment_code/metrics_report.csv
+src/__pycache__/initialize_dask.cpython-310.pyc
+experiment_code/dask-report.html
