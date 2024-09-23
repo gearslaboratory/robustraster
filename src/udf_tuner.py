@@ -9,6 +9,7 @@ import docker
 from functools import reduce
 import operator
 import psutil
+import pandas as pd
 
 from dask.distributed import performance_report
 
@@ -177,7 +178,41 @@ class UserDefinedFunction:
         # Write performance metrics to a CSV
         write_performance_metrics_to_file(ds)
 
-        return test
+        # Read the CSV file into a DataFrame
+        df = pd.read_csv('metrics_report.csv')
+
+        # Check if I need to do another iteration of a larger chunk size.
+        if len(df) == 1:
+            # Multiply the chunk size by 2.
+            derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
+            new_chunks = {dim: size * 2 for dim, size in derived_chunk_size.items()}
+            ds_rechunked = ds.chunk(new_chunks)
+
+            # Rerun my test with this new chunk size.
+            return self._tune_user_function(ds_rechunked, user_func, *args, **kwargs)
+
+        elif len(df) >= 2:
+            # Get the last two Tparallel values
+            previous_tparallel = df['Tparallel(pixel/worker)'].iloc[-2]
+            latest_tparallel = df['Tparallel(pixel/worker)'].iloc[-1]
+
+            print(previous_tparallel)
+            print(latest_tparallel)
+            if latest_tparallel >= previous_tparallel:
+                # Get the chunk size from the prior iteration.
+                derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
+                new_chunks = {dim: size / 2 for dim, size in derived_chunk_size.items()}
+                ds_rechunked = ds.chunk(new_chunks)
+
+                return ds_rechunked
+            else:
+                # Multiply the chunk size by 2.
+                derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
+                new_chunks = {dim: size * 2 for dim, size in derived_chunk_size.items()}
+                ds_rechunked = ds.chunk(new_chunks)
+
+                # Rerun my test with this new chunk size.
+                return self._tune_user_function(ds_rechunked, user_func, *args, **kwargs)
         
     def _generate_template_xarray(self, ds, user_func):
         # Dynamically determine dimension names
@@ -256,7 +291,8 @@ class UserDefinedFunction:
                                template=template)
         '''
         # Run tests here! Then jump to the real run! #
-        test = self._tune_user_function(ds, user_func, *args, **kwargs)
+        best_ds = self._tune_user_function(ds, user_func, *args, **kwargs)
+        return best_ds
         
         '''
         # If I load the dataset as a dask delayed, I don't need a template!
