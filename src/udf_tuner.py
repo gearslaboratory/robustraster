@@ -146,9 +146,6 @@ def write_performance_metrics_to_file(ds):
     with open('metrics_report.csv', 'a', newline='') as csvfile:
         writer = csv.writer(csvfile)
         
-        # Write the header if the file is new
-        writer.writerow(["Chunk Size", "C", "TC(s)", "RC(GiB)", "wMax", "wRAM", "Tpixel(s/pixel)", "Tparallel(pixel/worker)"])
-        
         # Write the row of results
         writer.writerow(row)
         
@@ -156,7 +153,7 @@ def write_performance_metrics_to_file(ds):
 
 class UserDefinedFunction:
     def __init__(self):
-        pass
+        self.chunk_size_history = None
 
     def _tune_user_function(self, ds, user_func, *args, **kwargs):
         # Dynamically determine dimension names
@@ -181,16 +178,18 @@ class UserDefinedFunction:
         # Read the CSV file into a DataFrame
         df = pd.read_csv('metrics_report.csv')
 
-        # Check if I need to do another iteration of a larger chunk size.
+        # Do another iteration if I have just one done.
         if len(df) == 1:
-            # Multiply the chunk size by 2.
             derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
+            self.chunk_size_history = derived_chunk_size
+            # Multiply the chunk size by 2.
             new_chunks = {dim: size * 2 for dim, size in derived_chunk_size.items()}
             ds_rechunked = ds.chunk(new_chunks)
 
             # Rerun my test with this new chunk size.
             return self._tune_user_function(ds_rechunked, user_func, *args, **kwargs)
 
+        # Check if I need to do another iteration of a larger chunk size.
         elif len(df) >= 2:
             # Get the last two Tparallel values
             previous_tparallel = df['Tparallel(pixel/worker)'].iloc[-2]
@@ -198,16 +197,18 @@ class UserDefinedFunction:
 
             print(previous_tparallel)
             print(latest_tparallel)
+
             if latest_tparallel >= previous_tparallel:
+                print({dim: chunks[0] for dim, chunks in ds.chunks.items()})
+                print(self.chunk_size_history)
                 # Get the chunk size from the prior iteration.
-                derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
-                new_chunks = {dim: size / 2 for dim, size in derived_chunk_size.items()}
-                ds_rechunked = ds.chunk(new_chunks)
+                ds_rechunked = ds.chunk(self.chunk_size_history)
 
                 return ds_rechunked
             else:
                 # Multiply the chunk size by 2.
                 derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
+                self.chunk_size_history = derived_chunk_size
                 new_chunks = {dim: size * 2 for dim, size in derived_chunk_size.items()}
                 ds_rechunked = ds.chunk(new_chunks)
 
@@ -290,6 +291,14 @@ class UserDefinedFunction:
                                kwargs=kwargs, 
                                template=template)
         '''
+
+        # Open the CSV file in append mode and write the header and new row
+        with open('metrics_report.csv', 'a', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+
+            # Write the header if the file is new
+            writer.writerow(["Chunk Size", "C", "TC(s)", "RC(GiB)", "wMax", "wRAM", "Tpixel(s/pixel)", "Tparallel(pixel/worker)"])
+            
         # Run tests here! Then jump to the real run! #
         best_ds = self._tune_user_function(ds, user_func, *args, **kwargs)
         return best_ds
