@@ -154,15 +154,9 @@ def write_performance_metrics_to_file(ds):
 class UserDefinedFunction:
     def __init__(self):
         self.chunk_size_history = None
+        self.chunk_size_multiplier = 1
 
-    def _tune_user_function(self, ds, user_func, *args, **kwargs):
-        # Dynamically determine dimension names
-        dim_names = list(ds.dims.keys())
-        
-        # Extract a single chunk to determine the output structure using dynamic dimension names
-        one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
-        one_chunk = ds.isel(**one_chunk_slices)
-        
+    def _tune_user_function(self, ds, one_chunk, user_func, *args, **kwargs):
         test = xr.map_blocks(self._user_function_wrapper, 
                                one_chunk, 
                                args=(user_func,) + args, 
@@ -173,21 +167,17 @@ class UserDefinedFunction:
             test.compute()
         
         # Write performance metrics to a CSV
-        write_performance_metrics_to_file(ds)
+        write_performance_metrics_to_file(one_chunk)
 
         # Read the CSV file into a DataFrame
         df = pd.read_csv('metrics_report.csv')
 
         # Do another iteration if I have just one done.
         if len(df) == 1:
-            derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
-            self.chunk_size_history = derived_chunk_size
-            # Multiply the chunk size by 2.
-            new_chunks = {dim: size * 2 for dim, size in derived_chunk_size.items()}
-            ds_rechunked = ds.chunk(new_chunks)
-
+            merged_chunk = self._up_chunk_size(ds, one_chunk)
+            
             # Rerun my test with this new chunk size.
-            return self._tune_user_function(ds_rechunked, user_func, *args, **kwargs)
+            return self._tune_user_function(ds, merged_chunk, user_func, *args, **kwargs)
 
         # Check if I need to do another iteration of a larger chunk size.
         elif len(df) >= 2:
@@ -195,26 +185,25 @@ class UserDefinedFunction:
             previous_tparallel = df['Tparallel(pixel/worker)'].iloc[-2]
             latest_tparallel = df['Tparallel(pixel/worker)'].iloc[-1]
 
-            print(previous_tparallel)
-            print(latest_tparallel)
-
             if latest_tparallel >= previous_tparallel:
-                print({dim: chunks[0] for dim, chunks in ds.chunks.items()})
-                print(self.chunk_size_history)
-                # Get the chunk size from the prior iteration.
-                ds_rechunked = ds.chunk(self.chunk_size_history)
-
-                return ds_rechunked
+                return self.chunk_size_history
             else:
-                # Multiply the chunk size by 2.
-                derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
-                self.chunk_size_history = derived_chunk_size
-                new_chunks = {dim: size * 2 for dim, size in derived_chunk_size.items()}
-                ds_rechunked = ds.chunk(new_chunks)
+                merged_chunk = self._up_chunk_size(ds, one_chunk)
 
                 # Rerun my test with this new chunk size.
-                return self._tune_user_function(ds_rechunked, user_func, *args, **kwargs)
-        
+                return self._tune_user_function(ds, merged_chunk, user_func, *args, **kwargs)
+    
+    def _up_chunk_size(self, ds, one_chunk):
+        self.chunk_size_history = {dim: chunks[0] for dim, chunks in one_chunk.chunks.items()}
+        self.chunk_size_multiplier *= 2
+
+        dim_names = list(ds.dims.keys())
+        merge_slices = {dim: slice(0, ds.chunks[dim][0] * self.chunk_size_multiplier) for dim in dim_names}
+        selected_chunk = ds.isel(**merge_slices)
+        merged_chunk = selected_chunk.chunk({dim: selected_chunk.sizes[dim] for dim in selected_chunk.dims})
+
+        return merged_chunk
+
     def _generate_template_xarray(self, ds, user_func):
         # Dynamically determine dimension names
         dim_names = list(ds.dims.keys())
@@ -298,18 +287,31 @@ class UserDefinedFunction:
 
             # Write the header if the file is new
             writer.writerow(["Chunk Size", "C", "TC(s)", "RC(GiB)", "wMax", "wRAM", "Tpixel(s/pixel)", "Tparallel(pixel/worker)"])
-            
-        # Run tests here! Then jump to the real run! #
-        best_ds = self._tune_user_function(ds, user_func, *args, **kwargs)
-        return best_ds
+
+        # Dynamically determine dimension names
+        dim_names = list(ds.dims.keys())
         
+        # Extract a single chunk to determine the output structure using dynamic dimension names
+        one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
+        one_chunk = ds.isel(**one_chunk_slices)
+
+        # Run tests here! Then jump to the real run! #
+        optimal_chunk_size = self._tune_user_function(ds, one_chunk, user_func, *args, **kwargs)
+        
+        ds_rechunked = ds.chunk(optimal_chunk_size)
+
+        result = xr.map_blocks(self._user_function_wrapper, 
+                               ds_rechunked, 
+                               args=(user_func,) + args, 
+                               kwargs=kwargs)
+        
+        return result
+    
         '''
         # If I load the dataset as a dask delayed, I don't need a template!
         result = xr.map_blocks(self._user_function_wrapper, 
-                               ds, 
+                               best_ds, 
                                args=(user_func,) + args, 
                                kwargs=kwargs)
 
-        return result
-        '''
-        #return test
+        return result'''
