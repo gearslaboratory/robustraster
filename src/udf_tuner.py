@@ -197,16 +197,29 @@ class UserDefinedFunction:
         self.chunk_size_history = {dim: chunks[0] for dim, chunks in one_chunk.chunks.items()}
         self.chunk_size_multiplier *= 2
 
-        dim_names = list(ds.dims.keys())
-        merge_slices = {dim: slice(0, ds.chunks[dim][0] * self.chunk_size_multiplier) for dim in dim_names}
+        dim_names = list(ds.sizes.keys())
+
+        first_dim = dim_names[0]
+        #merge_slices = {dim: slice(0, ds.chunks[dim][0] * self.chunk_size_multiplier) for dim in dim_names}
+        
+        merge_slices = {
+        dim: slice(0, ds.chunks[dim][0] * self.chunk_size_multiplier) if dim != first_dim else slice(0, ds.chunks[dim][0])
+        for dim in dim_names
+        }
+
         selected_chunk = ds.isel(**merge_slices)
-        merged_chunk = selected_chunk.chunk({dim: selected_chunk.sizes[dim] for dim in selected_chunk.dims})
+        #merged_chunk = selected_chunk.chunk({dim: selected_chunk.sizes[dim] for dim in selected_chunk.dims})
+
+        merged_chunk = selected_chunk.chunk({
+        dim: selected_chunk.sizes[dim] if dim == first_dim else selected_chunk.sizes[dim]
+        for dim in selected_chunk.dims
+        })
 
         return merged_chunk
 
     def _generate_template_xarray(self, ds, user_func):
         # Dynamically determine dimension names
-        dim_names = list(ds.dims.keys())
+        dim_names = list(ds.sizes.keys())
         
         # Extract a single chunk to determine the output structure using dynamic dimension names
         one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
@@ -289,7 +302,7 @@ class UserDefinedFunction:
             writer.writerow(["Chunk Size", "C", "TC(s)", "RC(GiB)", "wMax", "wRAM", "Tpixel(s/pixel)", "Tparallel(pixel/worker)"])
 
         # Dynamically determine dimension names
-        dim_names = list(ds.dims.keys())
+        dim_names = list(ds.sizes.keys())
         
         # Extract a single chunk to determine the output structure using dynamic dimension names
         one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}

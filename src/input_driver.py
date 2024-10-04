@@ -53,7 +53,7 @@ class EarthEngineData(DataReaderInterface):
         - json_key (str): Service account JSON credentials file. If None, it assumes the user is already authenticated.
         """
 
-        initialize_earth_engine(json_key)
+        #initialize_earth_engine(json_key)
         self._xarray_data = self._read_data(parameters)
 
         # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
@@ -181,22 +181,14 @@ class EarthEngineData(DataReaderInterface):
         # would add up to your total payload size. To compute the bytes say filter by date takes up, you 
         # add up the characters, including white space, and multiply it by 1 byte (assuming the characters
         # are UTF-8 encoded).
-        '''default_chunks  = {
-            'time': 48,
+
+        # This chunk size will be used to determine an optimal chunk size for the user.
+        test_chunk_size = {
+            'time': ee_collection.size().getInfo(),
             'X': 512,
             'Y': 256
         }
 
-        # Extract chunk sizes from kwargs if provided
-        chunk_size = parameters.pop('chunks', default_chunks)
-        '''
-
-        chunk_size  = {
-            'time': 48,
-            'X': 512,
-            'Y': 256
-        }
-        
         # Fetch data from Earth Engine
         xarray_data = xr.open_dataset(
             ee_collection, 
@@ -204,7 +196,7 @@ class EarthEngineData(DataReaderInterface):
             crs=crs, 
             scale=scale,
             geometry=geometry,
-            chunks=chunk_size)
+            chunks=test_chunk_size)
         
         # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
         # machine's storage array.
