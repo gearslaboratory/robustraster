@@ -182,13 +182,20 @@ class EarthEngineData(DataReaderInterface):
         # add up the characters, including white space, and multiply it by 1 byte (assuming the characters
         # are UTF-8 encoded).
 
-        # This chunk size will be used to determine an optimal chunk size for the user.
-        test_chunk_size = {
+        # This will be the initialize chunk size that will be used to determine an optimal 
+        # chunk size for the user.
+        '''test_chunk_size = {
             'time': ee_collection.size().getInfo(),
             'X': 512,
             'Y': 256
-        }
+        }'''
 
+        test_chunk_size = {
+            'time': 48,
+            'X': 512,
+            'Y': 256
+        }
+        
         # Fetch data from Earth Engine
         xarray_data = xr.open_dataset(
             ee_collection, 

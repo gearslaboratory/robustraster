@@ -22,3 +22,4 @@ src/__pycache__/initialize_dask.cpython-310.pyc
 experiment_code/dask-report.html
 experiment_code/testdf.ipynb
 experiment_code/html_parse.ipynb
+src/__pycache__/dask_cluster_manager.cpython-310.pyc

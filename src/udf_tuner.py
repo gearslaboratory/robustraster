@@ -9,7 +9,9 @@ import docker
 from functools import reduce
 import operator
 import psutil
+import math
 import pandas as pd
+
 
 from dask.distributed import performance_report
 
@@ -120,13 +122,20 @@ def get_available_system_memory():
     # Convert from bytes to gigabytes (GB)
     total_ram_gb = total_ram / (1024 ** 3)
 
+    return total_ram_gb
+
 def get_compute_time_per_pixel(ds, compute_time_seconds, max_memory_gb):
     # Assuming xarray_obj is your chunked xarray dataset
     derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
     pixels_per_chunk = reduce(operator.mul, derived_chunk_size.values())
 
     max_workers = get_dask_workers_count()
-    max_workers_ram_limited = max_workers#floor()
+    
+    # Get the max workers (RAM limited)
+    available_system_memory = get_available_system_memory()
+    ram_safety_threshold = 0.5
+    max_workers_ram_limited = min(math.floor(available_system_memory * ram_safety_threshold / max_memory_gb), max_workers)
+
     pixel_wall_time = compute_time_seconds / pixels_per_chunk
     parallel_pixel_wall_time = pixel_wall_time / max_workers_ram_limited
 
@@ -210,6 +219,7 @@ class UserDefinedFunction:
         selected_chunk = ds.isel(**merge_slices)
         #merged_chunk = selected_chunk.chunk({dim: selected_chunk.sizes[dim] for dim in selected_chunk.dims})
 
+        
         merged_chunk = selected_chunk.chunk({
         dim: selected_chunk.sizes[dim] if dim == first_dim else selected_chunk.sizes[dim]
         for dim in selected_chunk.dims
