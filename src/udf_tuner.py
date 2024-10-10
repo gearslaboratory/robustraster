@@ -162,57 +162,111 @@ def write_performance_metrics_to_file(ds):
 
 class UserDefinedFunction:
     def __init__(self):
-        self.chunk_size_history = None
-        self.chunk_size_multiplier = 1
+        self._chunk_size_history = None
+        self._chunk_size_multiplier = 1
 
-    def _tune_user_function(self, ds, one_chunk, user_func, *args, **kwargs):
-        test = xr.map_blocks(self._user_function_wrapper, 
-                               one_chunk, 
-                               args=(user_func,) + args, 
-                               kwargs=kwargs)
+        # Initialize iteration count and count for small differences
+        self._iteration_count = 0
+        self._small_diff_count = 0
+
+    def _get_single_chunk(ds):
+         # Dynamically determine dimension names
+        dim_names = list(ds.sizes.keys())
         
-        # Create a Dask report of the single chunked run
-        with performance_report(filename="dask-report.html"):
-            test.compute()
-        
-        # Write performance metrics to a CSV
-        write_performance_metrics_to_file(one_chunk)
+        # Extract a single chunk to determine the output structure using dynamic dimension names
+        one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
 
-        # Read the CSV file into a DataFrame
-        df = pd.read_csv('metrics_report.csv')
+        return ds.isel(**one_chunk_slices)
+    
+    def _create_metrics_report():
+        # Open the CSV file in append mode and write the header and new row
+        with open('metrics_report.csv', 'a', newline='') as csvfile:
+            writer = csv.writer(csvfile)
 
-        # Do another iteration if I have just one done.
-        if len(df) == 1:
-            merged_chunk = self._up_chunk_size(ds, one_chunk)
+            # Write the header if the file is new
+            writer.writerow(["Chunk Size", "C", "TC(s)", "RC(GiB)", "wMax", "wRAM", "Tpixel(s/pixel)", "Tparallel(pixel/worker)"])
+
+    def _get_tuned_xarray(self, ds, one_chunk, user_func, *args, **kwargs):
+        max_iterations = kwargs.get('max_iterations', None)
+
+        while True:
+            self._iteration_count += 1
+
+            test = xr.map_blocks(self._user_function_wrapper, 
+                                one_chunk, 
+                                args=(user_func,) + args, 
+                                kwargs=kwargs)
             
-            # Rerun my test with this new chunk size.
-            return self._tune_user_function(ds, merged_chunk, user_func, *args, **kwargs)
+            # Create a Dask report of the single chunked run
+            with performance_report(filename="dask-report.html"):
+                test.compute()
+            
+            # Write performance metrics to a CSV
+            write_performance_metrics_to_file(one_chunk)
 
-        # Check if I need to do another iteration of a larger chunk size.
-        elif len(df) >= 2:
-            # Get the last two Tparallel values
-            previous_tparallel = df['Tparallel(pixel/worker)'].iloc[-2]
-            latest_tparallel = df['Tparallel(pixel/worker)'].iloc[-1]
+            # Read the CSV file into a DataFrame
+            df = pd.read_csv('metrics_report.csv')
 
-            if latest_tparallel >= previous_tparallel:
-                return self.chunk_size_history
-            else:
+            # Do another iteration if only one entry is in the CSV
+            if len(df) == 1:
                 merged_chunk = self._up_chunk_size(ds, one_chunk)
+                
+                # Rerun test with this new chunk size
+                return self._get_tuned_xarray(ds, merged_chunk, user_func, *args, **kwargs)
 
-                # Rerun my test with this new chunk size.
-                return self._tune_user_function(ds, merged_chunk, user_func, *args, **kwargs)
+            # Check if two or more iterations have been performed
+            elif len(df) >= 2:
+                # Get the last two Tparallel values
+                previous_tparallel = df['Tparallel(pixel/worker)'].iloc[-2]
+                latest_tparallel = df['Tparallel(pixel/worker)'].iloc[-1]
+
+                # If latest is greater or equal to previous, return chunked dataset
+                if latest_tparallel >= previous_tparallel:
+                    self._iteration_count = 0
+                    self._small_diff_count = 0
+                    return ds.chunk(self._chunk_size_history)
+
+                # If latest is smaller, check the percentage difference
+                else:
+                    percentage_diff = abs((previous_tparallel - latest_tparallel) / previous_tparallel) * 100
+                    
+                    # If the difference is less than or equal to 1%, increment the small_diff_count
+                    if percentage_diff <= 1:
+                        self._small_diff_count += 1
+
+                        # If small_diff_count reaches 3, return chunked dataset
+                        if self._small_diff_count >= 3:
+                            self._iteration_count = 0
+                            self._small_diff_count = 0
+                            return ds.chunk(self._chunk_size_history)
+
+                        # If small_diff_count is less than 3, rerun with the same chunk size
+                        return self._get_tuned_xarray(ds, one_chunk, user_func, *args, **kwargs)
+
+                    # If the difference is greater than 1%, adjust the chunk size and rerun the test
+                    else:
+                        self._small_diff_count = 0
+                        merged_chunk = self._up_chunk_size(ds, one_chunk)
+                        return self._get_tuned_xarray(ds, merged_chunk, user_func, *args, **kwargs)
+            
+            # Break the loop if max_iterations is set and limit is reached
+            if max_iterations is not None and self._iteration_count >= max_iterations:
+                self._iteration_count = 0
+                self._small_diff_count = 0
+                return ds.chunk(self._chunk_size_history)
+
     
     def _up_chunk_size(self, ds, one_chunk):
-        self.chunk_size_history = {dim: chunks[0] for dim, chunks in one_chunk.chunks.items()}
-        self.chunk_size_multiplier *= 2
+        self._chunk_size_history = {dim: chunks[0] for dim, chunks in one_chunk.chunks.items()}
+        self._chunk_size_multiplier *= 2
 
         dim_names = list(ds.sizes.keys())
 
         first_dim = dim_names[0]
-        #merge_slices = {dim: slice(0, ds.chunks[dim][0] * self.chunk_size_multiplier) for dim in dim_names}
+        #merge_slices = {dim: slice(0, ds.chunks[dim][0] * self._chunk_size_multiplier) for dim in dim_names}
         
         merge_slices = {
-        dim: slice(0, ds.chunks[dim][0] * self.chunk_size_multiplier) if dim != first_dim else slice(0, ds.chunks[dim][0])
+        dim: slice(0, ds.chunks[dim][0] * self._chunk_size_multiplier) if dim != first_dim else slice(0, ds.chunks[dim][0])
         for dim in dim_names
         }
 
@@ -292,49 +346,24 @@ class UserDefinedFunction:
         return ds_output
         
     
+    def tune_user_function(self, ds, user_func, *args, **kwargs):
+        if not callable(user_func):
+            raise ValueError("The provided function must be callable.")
+        
+        self._create_metrics_report()
+
+        one_chunk = self._get_single_chunk(ds)
+
+        # Run tests here! Then jump to the real run! #
+        return self._get_tuned_xarray(ds, one_chunk, user_func, *args, **kwargs)
+        
     def apply_user_function(self, ds, user_func, *args, **kwargs):
         if not callable(user_func):
             raise ValueError("The provided function must be callable.")
-        '''
-        template = self._generate_template_xarray(ds, user_func)
+
         result = xr.map_blocks(self._user_function_wrapper, 
                                ds, 
-                               args=(user_func,) + args, 
-                               kwargs=kwargs, 
-                               template=template)
-        '''
-
-        # Open the CSV file in append mode and write the header and new row
-        with open('metrics_report.csv', 'a', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-
-            # Write the header if the file is new
-            writer.writerow(["Chunk Size", "C", "TC(s)", "RC(GiB)", "wMax", "wRAM", "Tpixel(s/pixel)", "Tparallel(pixel/worker)"])
-
-        # Dynamically determine dimension names
-        dim_names = list(ds.sizes.keys())
-        
-        # Extract a single chunk to determine the output structure using dynamic dimension names
-        one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
-        one_chunk = ds.isel(**one_chunk_slices)
-
-        # Run tests here! Then jump to the real run! #
-        optimal_chunk_size = self._tune_user_function(ds, one_chunk, user_func, *args, **kwargs)
-        
-        ds_rechunked = ds.chunk(optimal_chunk_size)
-
-        result = xr.map_blocks(self._user_function_wrapper, 
-                               ds_rechunked, 
                                args=(user_func,) + args, 
                                kwargs=kwargs)
         
         return result
-    
-        '''
-        # If I load the dataset as a dask delayed, I don't need a template!
-        result = xr.map_blocks(self._user_function_wrapper, 
-                               best_ds, 
-                               args=(user_func,) + args, 
-                               kwargs=kwargs)
-
-        return result'''
