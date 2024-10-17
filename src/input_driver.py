@@ -191,9 +191,9 @@ class EarthEngineData(DataReaderInterface):
         }'''
 
         test_chunk_size = {
-            'time': 48,
-            'X': 512,
-            'Y': 256
+            'time': 3,
+            'X': 9084,
+            'Y': 10578
         }
         
         # Fetch data from Earth Engine

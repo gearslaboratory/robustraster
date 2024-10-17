@@ -365,5 +365,7 @@ class UserDefinedFunction:
                                ds, 
                                args=(user_func,) + args, 
                                kwargs=kwargs)
+
+        result.compute()
         
         return result
