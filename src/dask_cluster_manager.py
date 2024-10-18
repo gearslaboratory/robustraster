@@ -103,9 +103,5 @@ class DaskClusterManager:
         if not self.scheduler:
             raise RuntimeError("Dask Scheduler is not running. Please start the cluster first.")
         
-        # Connect to the Dask Scheduler
-        if not self.dask_client:
-            self.dask_client = Client("tcp://localhost:8786")  # Connect to scheduler running at port 8786
-            print("Connected to Dask Scheduler.")
-        
+        self.dask_client = Client("tcp://localhost:8786")
         return self.dask_client

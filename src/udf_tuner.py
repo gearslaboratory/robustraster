@@ -129,7 +129,7 @@ def get_compute_time_per_pixel(ds, compute_time_seconds, max_memory_gb):
     derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
     pixels_per_chunk = reduce(operator.mul, derived_chunk_size.values())
 
-    max_workers = get_dask_workers_count()
+    max_workers = os.cpu_count()
     
     # Get the max workers (RAM limited)
     available_system_memory = get_available_system_memory()
@@ -163,13 +163,14 @@ def write_performance_metrics_to_file(ds):
 class UserDefinedFunction:
     def __init__(self):
         self._chunk_size_history = None
-        self._chunk_size_multiplier = 1
+        #self._chunk_size_multiplier = 1
 
         # Initialize iteration count and count for small differences
         self._iteration_count = 0
         self._small_diff_count = 0
 
-    def _get_single_chunk(ds):
+    def _get_starting_slice(self, ds):
+        '''
          # Dynamically determine dimension names
         dim_names = list(ds.sizes.keys())
         
@@ -177,8 +178,23 @@ class UserDefinedFunction:
         one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
 
         return ds.isel(**one_chunk_slices)
+        '''
+        # Get the name of the first dimension
+        first_dim_name = list(ds.dims)[0]
+
+        # Get the size of the first dimension
+        first_dim_size = ds.sizes[first_dim_name]
+
+        # Select a single chunk
+        ds_slice = ds.isel(
+            time=slice(0, first_dim_size),  # First time chunk
+            X=slice(0, 1),   # First X chunk
+            Y=slice(0, 1)    # First Y chunk
+        )
+
+        return ds_slice
     
-    def _create_metrics_report():
+    def _create_metrics_report(self):
         # Open the CSV file in append mode and write the header and new row
         with open('metrics_report.csv', 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
@@ -186,14 +202,14 @@ class UserDefinedFunction:
             # Write the header if the file is new
             writer.writerow(["Chunk Size", "C", "TC(s)", "RC(GiB)", "wMax", "wRAM", "Tpixel(s/pixel)", "Tparallel(pixel/worker)"])
 
-    def _get_tuned_xarray(self, ds, one_chunk, user_func, *args, **kwargs):
+    def _get_tuned_xarray(self, ds, ds_slice, user_func, *args, **kwargs):
         max_iterations = kwargs.get('max_iterations', None)
 
         while True:
             self._iteration_count += 1
 
             test = xr.map_blocks(self._user_function_wrapper, 
-                                one_chunk, 
+                                ds_slice, 
                                 args=(user_func,) + args, 
                                 kwargs=kwargs)
             
@@ -202,20 +218,24 @@ class UserDefinedFunction:
                 test.compute()
             
             # Write performance metrics to a CSV
-            write_performance_metrics_to_file(one_chunk)
+            write_performance_metrics_to_file(ds_slice)
 
             # Read the CSV file into a DataFrame
             df = pd.read_csv('metrics_report.csv')
 
             # Do another iteration if only one entry is in the CSV
             if len(df) == 1:
-                merged_chunk = self._up_chunk_size(ds, one_chunk)
-                
+                print(f"df 1: {ds_slice}")
+                print()
+                bigger_slice = self._get_bigger_slice(ds, ds_slice)
+    
                 # Rerun test with this new chunk size
-                return self._get_tuned_xarray(ds, merged_chunk, user_func, *args, **kwargs)
+                return self._get_tuned_xarray(ds, bigger_slice, user_func, *args, **kwargs)
 
             # Check if two or more iterations have been performed
             elif len(df) >= 2:
+                print(f"df next: {ds_slice}")
+                print()
                 # Get the last two Tparallel values
                 previous_tparallel = df['Tparallel(pixel/worker)'].iloc[-2]
                 latest_tparallel = df['Tparallel(pixel/worker)'].iloc[-1]
@@ -224,7 +244,8 @@ class UserDefinedFunction:
                 if latest_tparallel >= previous_tparallel:
                     self._iteration_count = 0
                     self._small_diff_count = 0
-                    return ds.chunk(self._chunk_size_history)
+                    return
+                    #return ds.chunk(self._chunk_size_history)
 
                 # If latest is smaller, check the percentage difference
                 else:
@@ -232,54 +253,56 @@ class UserDefinedFunction:
                     
                     # If the difference is less than or equal to 1%, increment the small_diff_count
                     if percentage_diff <= 1:
+                        print("Difference is only less than or equal to 1%")
                         self._small_diff_count += 1
 
                         # If small_diff_count reaches 3, return chunked dataset
                         if self._small_diff_count >= 3:
                             self._iteration_count = 0
                             self._small_diff_count = 0
-                            return ds.chunk(self._chunk_size_history)
+                            return 
+                            #return ds.chunk(self._chunk_size_history)
 
                         # If small_diff_count is less than 3, rerun with the same chunk size
-                        return self._get_tuned_xarray(ds, one_chunk, user_func, *args, **kwargs)
+                        return self._get_tuned_xarray(ds, ds_slice, user_func, *args, **kwargs)
 
                     # If the difference is greater than 1%, adjust the chunk size and rerun the test
                     else:
+                        print("Difference is GREATER than 1%")
                         self._small_diff_count = 0
-                        merged_chunk = self._up_chunk_size(ds, one_chunk)
-                        return self._get_tuned_xarray(ds, merged_chunk, user_func, *args, **kwargs)
+                        bigger_slice = self._get_bigger_slice(ds, ds_slice)
+                        print(f"NEW SLICE: {bigger_slice}")
+                        return self._get_tuned_xarray(ds, bigger_slice, user_func, *args, **kwargs)
             
             # Break the loop if max_iterations is set and limit is reached
             if max_iterations is not None and self._iteration_count >= max_iterations:
                 self._iteration_count = 0
                 self._small_diff_count = 0
-                return ds.chunk(self._chunk_size_history)
+                return
+                #return ds.chunk(self._chunk_size_history)
 
     
-    def _up_chunk_size(self, ds, one_chunk):
-        self._chunk_size_history = {dim: chunks[0] for dim, chunks in one_chunk.chunks.items()}
-        self._chunk_size_multiplier *= 2
+    def _get_bigger_slice(self, ds, ds_slice):
+        self._chunk_size_history = {dim: chunks[0] for dim, chunks in ds_slice.chunks.items()}
+        #self._chunk_size_multiplier *= 2
 
-        dim_names = list(ds.sizes.keys())
+        # Extract the dimension names and sizes into separate lists
+        dimension_names = list(ds_slice.dims)  # Get the dimension names
+        dimension_sizes = list(ds_slice.sizes.values())  # Get the sizes of each dimension
 
-        first_dim = dim_names[0]
-        #merge_slices = {dim: slice(0, ds.chunks[dim][0] * self._chunk_size_multiplier) for dim in dim_names}
-        
-        merge_slices = {
-        dim: slice(0, ds.chunks[dim][0] * self._chunk_size_multiplier) if dim != first_dim else slice(0, ds.chunks[dim][0])
-        for dim in dim_names
-        }
+        # Create a dictionary of slices dynamically
+        slices = {}
+        for i, dim_name in enumerate(dimension_names):
+            if i == 0:
+                # Keep the first dimension's slice as is (slice(0, full size of first dimension))
+                slices[dim_name] = slice(0, dimension_sizes[i])
+            else:
+                # Multiply the slice size of the other dimensions by 2
+                slices[dim_name] = slice(0, dimension_sizes[i] * 2)
 
-        selected_chunk = ds.isel(**merge_slices)
-        #merged_chunk = selected_chunk.chunk({dim: selected_chunk.sizes[dim] for dim in selected_chunk.dims})
-
-        
-        merged_chunk = selected_chunk.chunk({
-        dim: selected_chunk.sizes[dim] if dim == first_dim else selected_chunk.sizes[dim]
-        for dim in selected_chunk.dims
-        })
-
-        return merged_chunk
+        # Apply the slices to the dataset using isel
+        new_ds_slice = ds.isel(slices)
+        return new_ds_slice
 
     def _generate_template_xarray(self, ds, user_func):
         # Dynamically determine dimension names
@@ -352,15 +375,17 @@ class UserDefinedFunction:
         
         self._create_metrics_report()
 
-        one_chunk = self._get_single_chunk(ds)
+        ds_slice = self._get_starting_slice(ds)
 
         # Run tests here! Then jump to the real run! #
-        return self._get_tuned_xarray(ds, one_chunk, user_func, *args, **kwargs)
+        return self._get_tuned_xarray(ds, ds_slice, user_func, *args, **kwargs)
         
     def apply_user_function(self, ds, user_func, *args, **kwargs):
         if not callable(user_func):
             raise ValueError("The provided function must be callable.")
 
+        ds.chunk({'time': 48, 'X': 512, 'Y': 256})
+        ds.chunk(self._chunk_size_history)
         result = xr.map_blocks(self._user_function_wrapper, 
                                ds, 
                                args=(user_func,) + args, 

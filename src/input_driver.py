@@ -190,11 +190,6 @@ class EarthEngineData(DataReaderInterface):
             'Y': 256
         }'''
 
-        test_chunk_size = {
-            'time': 3,
-            'X': 9084,
-            'Y': 10578
-        }
         
         # Fetch data from Earth Engine
         xarray_data = xr.open_dataset(
@@ -202,9 +197,18 @@ class EarthEngineData(DataReaderInterface):
             engine='ee', 
             crs=crs, 
             scale=scale,
-            geometry=geometry,
-            chunks=test_chunk_size)
+            geometry=geometry)
+        
+        # Extract the sizes of each dimension dynamically
+        dims_sizes = {dim: size for dim, size in xarray_data.sizes.items()}
+
+        # Example chunk sizes - in this case, chunk size for each dimension is set to its full size
+        # You can modify the chunking size as needed for each dimension
+        chunking = {dim: size for dim, size in dims_sizes.items()}
+
+        # Re-chunk the dataset with the new chunk sizes
+        chunked_dataset = xarray_data.chunk(chunking)
         
         # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
         # machine's storage array.
-        return xarray_data
+        return chunked_dataset
