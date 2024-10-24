@@ -4,6 +4,7 @@ import xarray as xr
 import rasterio
 import rioxarray
 import ee
+import numpy as np
 
 class DataReaderInterface(ABC):
     @abstractmethod
@@ -55,16 +56,15 @@ class EarthEngineData(DataReaderInterface):
 
         #initialize_earth_engine(json_key)
         self._xarray_data = self._read_data(parameters)
-
-        # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
-        # machine's storage array.
-        #chunk_size = self._compute_chunk_sizes()
-        #xarray_data_chunked = self._xarray_data.chunk(chunk_size)
-        #self._xarray_data = xarray_data_chunked
+        self._max_chunks_limit = self._auto_compute_max_chunks()
     
     @property
-    def dataset(self):
+    def get_dataset(self):
         return self._xarray_data
+    
+    @property
+    def get_max_chunks_limit(self):
+        return self._max_chunks_limit
     
     def _get_data_type_in_bytes(self):
         '''
@@ -77,7 +77,7 @@ class EarthEngineData(DataReaderInterface):
         first_data_var = list(self._xarray_data.data_vars)[0]
         return self._xarray_data[first_data_var].dtype.itemsize
  
-    def _compute_chunk_sizes(self, target_size_mb=50.331648):
+    def _auto_compute_max_chunks(self, request_byte_limit=2**20 * 48):
         """
         Computes the appropriate chunk sizes for all three dimension given Earth Engine's request 
         payload size limit. Ensures the chunk size gets as close to Earth Engine's request payload 
@@ -90,32 +90,57 @@ class EarthEngineData(DataReaderInterface):
         Returns:
         dict: A dictionary containing the sizes for the first, second, and third dimensions.
         """
-        first_dimension = list(self._xarray_data.dims.keys())[0]
-        dim1_num_elements = self._xarray_data.sizes[first_dimension]
-        dtype_size = self._get_data_type_in_bytes()
 
-        # Get the data type
-        # Total number of bytes in the target size
-        target_size_bytes = target_size_mb * 1024 * 1024
+        # Get the name of the first dimension
+        first_dim_name = list(self._xarray_data.dims)[0]
+
+        # Get the size of the first dimension
+        index = self._xarray_data.sizes[first_dim_name]
+
+        # SGiven the data type size, a fixed index size, and request limit, calculate optimal chunks.
+        dtype_bytes = self._get_data_type_in_bytes()
+         
+        # Calculate the byte size used by the given index
+        index_byte_size = index * dtype_bytes
         
-        # Total number of elements required to match the target size
-        total_elements_in_bytes = target_size_bytes // dtype_size
+        # Check if the index size alone exceeds the request_byte_limit
+        if index_byte_size >= request_byte_limit:
+            raise ValueError("The given index size exceeds or nearly exhausts the request byte limit.")
+
+        # Calculate the remaining bytes available for width and height dimensions
+        remaining_bytes = request_byte_limit - index_byte_size
         
-        # Calculate the product of dimensions 2 and 3
-        dim2_dim3_product = total_elements_in_bytes // dim1_num_elements
-        
-        # We assume that dimensions 2 and 3 will be the same size for simplicity
-        dim2_num_elements = int(dim2_dim3_product ** 0.5)
-        dim3_num_elements = dim2_num_elements
-        
-        # Ensure the total size does not exceed the target size
-        while dim1_num_elements * dim2_num_elements * dim3_num_elements * dtype_size > target_size_bytes:
-            if dim2 > dim3:
-                dim2 -= 1
+        # Logarithmic splitting of remaining bytes into width and height, adjusted for dtype size
+        log_remaining = np.log2(remaining_bytes / dtype_bytes)  # Directly account for dtype_bytes
+
+        # Divide log_remaining between width and height
+        d = log_remaining / 2
+        wd, ht = np.ceil(d), np.floor(d)
+
+        # Convert width and height from log space to actual values
+        width = int(2 ** wd)
+        height = int(2 ** ht)
+
+        # Recheck if the final size exceeds the request_byte_limit and adjust
+        total_bytes = index * width * height * dtype_bytes
+        while total_bytes > request_byte_limit:
+            # If the total size exceeds, scale down width and height by reducing one of them
+            if width > height:
+                width //= 2
             else:
-                dim3 -= 1
-        
-        return {'time': dim1_num_elements, "X": dim2_num_elements, "Y": dim3_num_elements}
+                height //= 2
+            total_bytes = index * width * height * dtype_bytes
+
+        actual_bytes = index * width * height * dtype_bytes
+        if actual_bytes > request_byte_limit:
+            raise ValueError(
+                f'`chunks="auto"` failed! Actual bytes {actual_bytes!r} exceeds limit'
+                f' {request_byte_limit!r}.  Please choose another value for `chunks` (and file a'
+                ' bug).'
+            )
+    
+        return {'time': index, 'X': width, 'Y': height}
+
 
     def _construct_ee_collection(self, parameters: dict) -> ee.ImageCollection:
         """

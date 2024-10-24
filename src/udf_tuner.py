@@ -11,6 +11,7 @@ import operator
 import psutil
 import math
 import pandas as pd
+import numpy as np
 
 
 from dask.distributed import performance_report
@@ -163,11 +164,29 @@ def write_performance_metrics_to_file(ds):
 class UserDefinedFunction:
     def __init__(self):
         self._chunk_size_history = None
+        self._max_earth_engine_chunk_size = None
         #self._chunk_size_multiplier = 1
 
         # Initialize iteration count and count for small differences
         self._iteration_count = 0
         self._small_diff_count = 0
+
+        # Function to compute the size of a given chunk
+    def _compute_chunk_size(self, dtype_size, chunk_shape):
+        """Computes the total size of a chunk in bytes."""
+        return dtype_size * np.prod(chunk_shape)
+    
+    def _is_chunk_bigger_than_limit(self, ds, ee_chunk_limit):
+        first_data_var = list(ds.data_vars)[0]
+        dtype_size = ds[first_data_var].dtype.itemsize
+        chunk_shape = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
+        ds_chunk_bytes = self._compute_chunk_size(dtype_size, chunk_shape)
+        ee_max_chunk_bytes = self._compute_chunk_size(dtype_size, ee_chunk_limit)
+
+        if ds_chunk_bytes > ee_max_chunk_bytes:
+            return True
+        else:
+            return False
 
     def _get_starting_slice(self, ds):
         '''
@@ -204,7 +223,14 @@ class UserDefinedFunction:
 
     def _get_tuned_xarray(self, ds, ds_slice, user_func, *args, **kwargs):
         max_iterations = kwargs.get('max_iterations', None)
+        chunk_size_limit = kwargs.get('chunk_size_limit', None)
 
+        # Check if the current chunk size exceeds the EarthEngineData chunk limit.
+        if chunk_size_limit:
+            if self._is_chunk_bigger_than_limit(ds_slice, chunk_size_limit):
+                self._chunk_size_history = chunk_size_limit
+                return
+            
         while True:
             self._iteration_count += 1
 
@@ -225,8 +251,6 @@ class UserDefinedFunction:
 
             # Do another iteration if only one entry is in the CSV
             if len(df) == 1:
-                print(f"df 1: {ds_slice}")
-                print()
                 bigger_slice = self._get_bigger_slice(ds, ds_slice)
     
                 # Rerun test with this new chunk size
@@ -234,8 +258,6 @@ class UserDefinedFunction:
 
             # Check if two or more iterations have been performed
             elif len(df) >= 2:
-                print(f"df next: {ds_slice}")
-                print()
                 # Get the last two Tparallel values
                 previous_tparallel = df['Tparallel(pixel/worker)'].iloc[-2]
                 latest_tparallel = df['Tparallel(pixel/worker)'].iloc[-1]
@@ -245,7 +267,6 @@ class UserDefinedFunction:
                     self._iteration_count = 0
                     self._small_diff_count = 0
                     return
-                    #return ds.chunk(self._chunk_size_history)
 
                 # If latest is smaller, check the percentage difference
                 else:
@@ -261,7 +282,6 @@ class UserDefinedFunction:
                             self._iteration_count = 0
                             self._small_diff_count = 0
                             return 
-                            #return ds.chunk(self._chunk_size_history)
 
                         # If small_diff_count is less than 3, rerun with the same chunk size
                         return self._get_tuned_xarray(ds, ds_slice, user_func, *args, **kwargs)
@@ -279,9 +299,7 @@ class UserDefinedFunction:
                 self._iteration_count = 0
                 self._small_diff_count = 0
                 return
-                #return ds.chunk(self._chunk_size_history)
 
-    
     def _get_bigger_slice(self, ds, ds_slice):
         self._chunk_size_history = {dim: chunks[0] for dim, chunks in ds_slice.chunks.items()}
         #self._chunk_size_multiplier *= 2
@@ -369,22 +387,23 @@ class UserDefinedFunction:
         return ds_output
         
     
-    def tune_user_function(self, ds, user_func, *args, **kwargs):
+    def tune_user_function(self, data_source, user_func, *args, **kwargs):
         if not callable(user_func):
             raise ValueError("The provided function must be callable.")
         
         self._create_metrics_report()
-
+        
+        ds = data_source.dataset
         ds_slice = self._get_starting_slice(ds)
+        chunk_size_limit = data_source.get_max_chunks_limit()
 
         # Run tests here! Then jump to the real run! #
-        return self._get_tuned_xarray(ds, ds_slice, user_func, *args, **kwargs)
+        return self._get_tuned_xarray(ds, ds_slice, user_func, chunk_size_limit=chunk_size_limit, *args, **kwargs)
         
     def apply_user_function(self, ds, user_func, *args, **kwargs):
         if not callable(user_func):
             raise ValueError("The provided function must be callable.")
 
-        ds.chunk({'time': 48, 'X': 512, 'Y': 256})
         ds.chunk(self._chunk_size_history)
         result = xr.map_blocks(self._user_function_wrapper, 
                                ds, 
