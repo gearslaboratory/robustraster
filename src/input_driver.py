@@ -59,7 +59,7 @@ class EarthEngineData(DataReaderInterface):
         self._max_chunks_limit = self._auto_compute_max_chunks()
     
     @property
-    def get_dataset(self):
+    def dataset(self):
         return self._xarray_data
     
     @property
@@ -97,7 +97,7 @@ class EarthEngineData(DataReaderInterface):
         # Get the size of the first dimension
         index = self._xarray_data.sizes[first_dim_name]
 
-        # SGiven the data type size, a fixed index size, and request limit, calculate optimal chunks.
+        # Given the data type size, a fixed index size, and request limit, calculate optimal chunks.
         dtype_bytes = self._get_data_type_in_bytes()
          
         # Calculate the byte size used by the given index
@@ -224,6 +224,8 @@ class EarthEngineData(DataReaderInterface):
             scale=scale,
             geometry=geometry)
         
+        return xarray_data
+    '''
         # Extract the sizes of each dimension dynamically
         dims_sizes = {dim: size for dim, size in xarray_data.sizes.items()}
 
@@ -237,3 +239,6 @@ class EarthEngineData(DataReaderInterface):
         # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
         # machine's storage array.
         return chunked_dataset
+    '''
+    def chunk_dataset(self, chunk_size):
+        self._xarray_data = self._xarray_data.chunk(chunk_size)

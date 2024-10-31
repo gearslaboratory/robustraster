@@ -162,19 +162,25 @@ def write_performance_metrics_to_file(ds):
     #os.remove('dask-report.html')
 
 class UserDefinedFunction:
-    def __init__(self):
+    def __init__(self, data_source=None, max_iterations=None):
         self._chunk_size_history = None
-        self._max_earth_engine_chunk_size = None
-        #self._chunk_size_multiplier = 1
+        self._max_chunks_limit = data_source.get_max_chunks_limit
 
         # Initialize iteration count and count for small differences
+        self._max_iterations = max_iterations
         self._iteration_count = 0
         self._small_diff_count = 0
 
         # Function to compute the size of a given chunk
     def _compute_chunk_size(self, dtype_size, chunk_shape):
         """Computes the total size of a chunk in bytes."""
-        return dtype_size * np.prod(chunk_shape)
+        # Multiply each value in the dictionary by the multiplier
+        result = 1
+        for value in chunk_shape.values():
+            result *= value
+
+        # Multiply the product of all values by the multiplier
+        return result * dtype_size
     
     def _is_chunk_bigger_than_limit(self, ds, ee_chunk_limit):
         first_data_var = list(ds.data_vars)[0]
@@ -189,15 +195,6 @@ class UserDefinedFunction:
             return False
 
     def _get_starting_slice(self, ds):
-        '''
-         # Dynamically determine dimension names
-        dim_names = list(ds.sizes.keys())
-        
-        # Extract a single chunk to determine the output structure using dynamic dimension names
-        one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
-
-        return ds.isel(**one_chunk_slices)
-        '''
         # Get the name of the first dimension
         first_dim_name = list(ds.dims)[0]
 
@@ -222,13 +219,11 @@ class UserDefinedFunction:
             writer.writerow(["Chunk Size", "C", "TC(s)", "RC(GiB)", "wMax", "wRAM", "Tpixel(s/pixel)", "Tparallel(pixel/worker)"])
 
     def _get_tuned_xarray(self, ds, ds_slice, user_func, *args, **kwargs):
-        max_iterations = kwargs.get('max_iterations', None)
-        chunk_size_limit = kwargs.get('chunk_size_limit', None)
-
         # Check if the current chunk size exceeds the EarthEngineData chunk limit.
-        if chunk_size_limit:
-            if self._is_chunk_bigger_than_limit(ds_slice, chunk_size_limit):
-                self._chunk_size_history = chunk_size_limit
+        if self._max_chunks_limit:
+            if self._is_chunk_bigger_than_limit(ds_slice, self._max_chunks_limit):
+                print("SLICE IS BIGGER THAN EARTH ENGINE'S MAX!")
+                self._chunk_size_history = self._max_chunks_limit
                 return
             
         while True:
@@ -239,6 +234,8 @@ class UserDefinedFunction:
                                 args=(user_func,) + args, 
                                 kwargs=kwargs)
             
+            #chunk_shape = {dim: chunks[0] for dim, chunks in ds_slice.chunks.items()}
+
             # Create a Dask report of the single chunked run
             with performance_report(filename="dask-report.html"):
                 test.compute()
@@ -295,14 +292,13 @@ class UserDefinedFunction:
                         return self._get_tuned_xarray(ds, bigger_slice, user_func, *args, **kwargs)
             
             # Break the loop if max_iterations is set and limit is reached
-            if max_iterations is not None and self._iteration_count >= max_iterations:
+            if self._max_iterations is not None and self._iteration_count >= self._max_iterations:
                 self._iteration_count = 0
                 self._small_diff_count = 0
                 return
 
     def _get_bigger_slice(self, ds, ds_slice):
         self._chunk_size_history = {dim: chunks[0] for dim, chunks in ds_slice.chunks.items()}
-        #self._chunk_size_multiplier *= 2
 
         # Extract the dimension names and sizes into separate lists
         dimension_names = list(ds_slice.dims)  # Get the dimension names
@@ -395,10 +391,9 @@ class UserDefinedFunction:
         
         ds = data_source.dataset
         ds_slice = self._get_starting_slice(ds)
-        chunk_size_limit = data_source.get_max_chunks_limit()
 
         # Run tests here! Then jump to the real run! #
-        return self._get_tuned_xarray(ds, ds_slice, user_func, chunk_size_limit=chunk_size_limit, *args, **kwargs)
+        return self._get_tuned_xarray(ds, ds_slice, user_func, *args, **kwargs)
         
     def apply_user_function(self, ds, user_func, *args, **kwargs):
         if not callable(user_func):
