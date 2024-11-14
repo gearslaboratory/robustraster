@@ -170,8 +170,24 @@ class UserDefinedFunction:
         self._max_iterations = max_iterations
         self._iteration_count = 0
         self._small_diff_count = 0
+    
+    # Chunk the whole dataset
+    def _chunk_data(self, ds):
+        # Extract the sizes of each dimension dynamically
+        dims_sizes = {dim: size for dim, size in ds.sizes.items()}
 
-        # Function to compute the size of a given chunk
+        # Example chunk sizes - in this case, chunk size for each dimension is set to its full size
+        # You can modify the chunking size as needed for each dimension
+        chunking = {dim: size for dim, size in dims_sizes.items()}
+
+        # Re-chunk the dataset with the new chunk sizes
+        chunked_dataset = ds.chunk(chunking)
+        
+        # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
+        # machine's storage array.
+        return chunked_dataset
+    
+    # Function to compute the size of a given chunk
     def _compute_chunk_size(self, dtype_size, chunk_shape):
         """Computes the total size of a chunk in bytes."""
         # Multiply each value in the dictionary by the multiplier
@@ -288,7 +304,6 @@ class UserDefinedFunction:
                         print("Difference is GREATER than 1%")
                         self._small_diff_count = 0
                         bigger_slice = self._get_bigger_slice(ds, ds_slice)
-                        print(f"NEW SLICE: {bigger_slice}")
                         return self._get_tuned_xarray(ds, bigger_slice, user_func, *args, **kwargs)
             
             # Break the loop if max_iterations is set and limit is reached
@@ -301,18 +316,24 @@ class UserDefinedFunction:
         self._chunk_size_history = {dim: chunks[0] for dim, chunks in ds_slice.chunks.items()}
 
         # Extract the dimension names and sizes into separate lists
-        dimension_names = list(ds_slice.dims)  # Get the dimension names
-        dimension_sizes = list(ds_slice.sizes.values())  # Get the sizes of each dimension
+        dimension_names = list(ds_slice.dims)
+        dimension_sizes = list(ds_slice.sizes.values())
+
+        # Determine which dimension to double based on the iteration count
+        dimension_to_double = 1 + (self._iteration_count % (len(dimension_sizes) - 1))
 
         # Create a dictionary of slices dynamically
         slices = {}
         for i, dim_name in enumerate(dimension_names):
             if i == 0:
-                # Keep the first dimension's slice as is (slice(0, full size of first dimension))
+                # Keep the first dimension's slice as is
                 slices[dim_name] = slice(0, dimension_sizes[i])
-            else:
-                # Multiply the slice size of the other dimensions by 2
+            elif i == dimension_to_double:
+                # Double the slice size of the selected dimension
                 slices[dim_name] = slice(0, dimension_sizes[i] * 2)
+            else:
+                # Keep the slice size of other dimensions as is
+                slices[dim_name] = slice(0, dimension_sizes[i])
 
         # Apply the slices to the dataset using isel
         new_ds_slice = ds.isel(slices)
@@ -390,16 +411,18 @@ class UserDefinedFunction:
         self._create_metrics_report()
         
         ds = data_source.dataset
-        ds_slice = self._get_starting_slice(ds)
-
-        # Run tests here! Then jump to the real run! #
-        return self._get_tuned_xarray(ds, ds_slice, user_func, *args, **kwargs)
+        ds_chunked = self._chunk_data(ds)
+        ds_slice = self._get_starting_slice(ds_chunked)
         
-    def apply_user_function(self, ds, user_func, *args, **kwargs):
+        # Run tests here! Then jump to the real run! #
+        return self._get_tuned_xarray(ds_chunked, ds_slice, user_func, *args, **kwargs)
+        
+    def apply_user_function(self, data_source, user_func, *args, **kwargs):
         if not callable(user_func):
             raise ValueError("The provided function must be callable.")
 
-        ds.chunk(self._chunk_size_history)
+        ds = data_source.dataset
+        ds = ds.chunk(self._chunk_size_history)
         result = xr.map_blocks(self._user_function_wrapper, 
                                ds, 
                                args=(user_func,) + args, 

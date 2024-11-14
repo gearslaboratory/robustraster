@@ -1,0 +1,14 @@
+distributed:
+  nanny:
+    environ:
+      MALLOC_TRIM_THRESHOLD_: 0  # or another value of your choice
+  scheduler:
+    active-memory-manager:
+      measure: managed
+  worker:
+    memory:
+      rebalance:
+        measure: managed
+      spill: false
+      pause: false
+      terminate: false
