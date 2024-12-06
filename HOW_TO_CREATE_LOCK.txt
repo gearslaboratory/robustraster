@@ -1,0 +1,7 @@
+1. Create a requirements.txt
+2. Install pip-tools
+    $ pip install pip-tools
+2. Create a requirements-lock.txt. If you are on Windows, you have to remove pywin32 from the lock.
+    $ pip-compile --output-file=requirements-lock.txt requirements.txt
+3. Install the requirements-lock.txt on your local machine in a new anaconda environment and rebuild your Docker image
+    using the requirements-lock.txt as well. (We are using Python 3.10.12)
