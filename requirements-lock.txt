@@ -95,6 +95,8 @@ google-resumable-media==2.7.2
     # via google-cloud-storage
 googleapis-common-protos==1.65.0
     # via google-api-core
+h5py==3.12.1
+    # via something
 httplib2==0.22.0
     # via
     #   earthengine-api
