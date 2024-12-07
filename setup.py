@@ -8,7 +8,8 @@ def parse_requirements(filename):
 
 setup(
     name="robustraster",
-    version="0.1.1",
+    version="0.1.2",
+    python_requires=">=3.10.12,<3.11",
     author="Adriano Matos",
     author_email="adrianom@unr.edu",
     description="Running user-defined functions on large datasets via out-of-core computation simplfied.",
