@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from earth_engine_auth import initialize_earth_engine
+from .earth_engine_auth import initialize_earth_engine
 import xarray as xr
 import rasterio
 import rioxarray
@@ -19,17 +19,39 @@ class DataReaderInterface(ABC):
                 reader = DataReaderInterface()  # This should raise a TypeError
 
 class LocalRasterReader(DataReaderInterface):
+    """
+    A reader for local raster files.
+
+    This class provides functionality to read raster data from a specified file path
+    using xarray and rioxarray. It is intended for handling raster data stored locally
+    and converts it into an xarray.Dataset for further analysis.
+
+    Attributes:
+    - _file_path (str): The path to the raster file.
+    - _xarray_data (xr.Dataset): The xarray representation of the raster data.
+
+    Example:
+    >>> reader = LocalRasterReader("/path/to/raster.tif")
+    >>> data = reader._xarray_data
+    >>> print(data)
+    """
     def __init__(self, file_path: str) -> None:
-        '''
+        """
         Initialize a LocalRasterReader instance.
 
         Parameters:
         - file_path (str): The absolute path to the raster file.
-        '''
+        """
         self._file_path = file_path
         self._xarray_data = self.read_data()
     
     def _read_data(self) -> xr.Dataset:
+        """
+        Open the raster data and store it into an xarray object.
+
+        Returns:
+        - xr.Dataset: An xarray Dataset of the raster object.
+        """
         try:
             with rioxarray.open_rasterio(self._file_path, band_as_variable=True) as xarray_data:
                 return xarray_data
@@ -38,7 +60,93 @@ class LocalRasterReader(DataReaderInterface):
             raise
 
 class EarthEngineData(DataReaderInterface):
-    def __init__(self, parameters: dict, json_key: str = None) -> None:
+    """
+    A reader for Google Earth Engine data.
+
+    This class is an extension of xee (link to the package: https://github.com/google/Xee) that reads data
+    from Google Earth Engine into an xarray object. It is intended to make reading data from Google Earth
+    Engine to your machine a bit easier, without necessarily having to learn the xarray data structure.
+
+    Attributes:
+    - _xarray_data: A private attribute of the user's queried Earth Engine data stored into an xarray object.
+
+    - _max_chunks_limit: A private attribute that requires no user interference. This is meant to determine the
+                         maximum amount of data we can pull from Google Earth Engine per request.
+
+    Public Methods (these are functions that are openly available for users to use):
+
+    - dataset: A property meant to retrieve the xarray Dataset stored in _xarray_data.
+
+    - get_max_chunks_limit: A property that requires no user interference. This is called if the user wants to use
+                            the tuning functionality of this package. However, the user does not need to understand
+                            how to use this function (unless they choose to set a chunk size themselves).
+
+    Private Methods (these are functions that the user will NOT need to use that are called behind the scenes):
+
+    - _get_data_type_in_bytes: A private method that obtains the data type of the Earth Engine bands (stored as "data variables" in
+                               the xarray object).
+    
+    - _auto_compute_max_chunks: A private method that stores the maximum amount of data we can pull from Google Earth Engine per
+                                request into "_max_chunks_limit".
+    
+    - _construct_ee_collection: A private method that constructs an Earth Engine ee.ImageCollection based on the user's specified
+                                parameters (see the Example below and the docstring for __init__ on how to specify parameters).
+    
+    - _read_data: A private method that uses xee to read the data query from Earth Engine into an xarray object.
+    
+    Example usage for integrating Earth Engine with a custom cloud masking algorithm:
+        1. Import required libraries and modules:
+        >>> from robustraster import input_driver
+        >>> import ee
+        >>> import json
+
+        2. Authenticate and initialize Earth Engine:
+        >>> with open(json_key, 'r') as file:
+        >>>     data = json.load(file)
+        >>> credentials = ee.ServiceAccountCredentials(data["client_email"], json_key)
+        >>> ee.Initialize(credentials=credentials, opt_url='https://earthengine-highvolume.googleapis.com')
+
+        3. Define a cloud masking algorithm for Landsat 8 Surface Reflectance:
+        >>> def prep_sr_l8(image):
+        >>>     # Bit 0 - Fill
+        >>>     # Bit 1 - Dilated Cloud
+        >>>     # Bit 2 - Cirrus
+        >>>     # Bit 3 - Cloud
+        >>>     # Bit 4 - Cloud Shadow
+        >>>     qa_mask = image.select('QA_PIXEL').bitwiseAnd(int('11111', 2)).eq(0)
+        >>>     saturation_mask = image.select('QA_RADSAT').eq(0)
+
+        >>>     # Apply scaling factors to appropriate bands
+        >>>     optical_bands = image.select('SR_B.*').multiply(0.0000275).add(-0.2)
+        >>>     thermal_bands = image.select('ST_B.*').multiply(0.00341802).add(149.0)
+
+        >>>     # Return the processed image
+        >>>     return (image.addBands(optical_bands, None, True)
+        >>>                 .addBands(thermal_bands, None, True)
+        >>>                 .updateMask(qa_mask)
+        >>>                 .updateMask(saturation_mask))
+
+        4. Prepare parameters for data processing:
+        >>> WSDemo = ee.FeatureCollection("projects/robust-raster/assets/boundaries/WSDemoSHP_Albers")
+        >>> parameters = {
+        >>>     'collection': 'LANDSAT/LC08/C02/T1_L2',
+        >>>     'bands': ['SR_B4', 'SR_B5'],
+        >>>     'start_date': '2020-05-01',
+        >>>     'end_date': '2020-08-31',
+        >>>     'geometry': WSDemo.geometry(),
+        >>>     'crs': 'EPSG:3310',
+        >>>     'scale': 30,
+        >>>     'map_function': prep_sr_l8
+        >>> }
+
+        5. Create the EarthEngineData object:
+        >>> earth_engine = input_driver.EarthEngineData(parameters)
+
+        6. Print the contents of the data:
+        >>> print(earth_engine.dataset)
+    """
+
+    def __init__(self, parameters: dict) -> None:
         """
         Initialize the EarthEngineData class. Reads in a service account credentials file (JSON format) that has permission to use the 
         Earth Engine API. If no file is passed, it will first try to initialize Earth Engine using credentials stored on the machine. If 
@@ -51,10 +159,8 @@ class EarthEngineData(DataReaderInterface):
 
         Parameters:
         - parameters (dict): A dictionary containing user parameters to query Earth Engine.
-        - json_key (str): Service account JSON credentials file. If None, it assumes the user is already authenticated.
         """
 
-        #initialize_earth_engine(json_key)
         self._xarray_data = self._read_data(parameters)
         self._max_chunks_limit = self._auto_compute_max_chunks()
     
@@ -197,24 +303,6 @@ class EarthEngineData(DataReaderInterface):
         geometry = parameters.get('geometry', None)
         crs = parameters.get('crs', None)
 
-
-        # So the payload size in Earth Engine says its 10MB, but xee found through trial and error 48 MBs.
-        # When using ee.data.computePixels (which xee using in the backend), it sends a request object. 
-        # This object will also contain the chunk size. To compute the size of the chunk, you can multiple 
-        # each dimension and then multiply by the dtype size (if the pixels are float64, then 8 bytes). 
-        # This, including the other aspects of the request object (filtering by date, cloud mask, etc.) 
-        # would add up to your total payload size. To compute the bytes say filter by date takes up, you 
-        # add up the characters, including white space, and multiply it by 1 byte (assuming the characters
-        # are UTF-8 encoded).
-
-        # This will be the initialize chunk size that will be used to determine an optimal 
-        # chunk size for the user.
-        '''test_chunk_size = {
-            'time': ee_collection.size().getInfo(),
-            'X': 512,
-            'Y': 256
-        }'''
-
         
         # Fetch data from Earth Engine
         xarray_data = xr.open_dataset(
@@ -224,21 +312,5 @@ class EarthEngineData(DataReaderInterface):
             scale=scale,
             geometry=geometry)
         
+        xarray_data = xarray_data.sortby('time')
         return xarray_data
-    '''
-        # Extract the sizes of each dimension dynamically
-        dims_sizes = {dim: size for dim, size in xarray_data.sizes.items()}
-
-        # Example chunk sizes - in this case, chunk size for each dimension is set to its full size
-        # You can modify the chunking size as needed for each dimension
-        chunking = {dim: size for dim, size in dims_sizes.items()}
-
-        # Re-chunk the dataset with the new chunk sizes
-        chunked_dataset = xarray_data.chunk(chunking)
-        
-        # Chunking after loading the data bypasses a UserWarning where the chunk shape doesn't match for your
-        # machine's storage array.
-        return chunked_dataset
-    '''
-    def chunk_dataset(self, chunk_size):
-        self._xarray_data = self._xarray_data.chunk(chunk_size)
