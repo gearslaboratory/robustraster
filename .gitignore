@@ -24,3 +24,10 @@ experiment_code/testdf.ipynb
 experiment_code/html_parse.ipynb
 src/__pycache__/dask_cluster_manager.cpython-310.pyc
 processed_data.nc
+src/robustraster/__pycache__/__init__.cpython-310.pyc
+src/robustraster/__pycache__/dask_cluster_manager.cpython-310.pyc
+src/robustraster/__pycache__/dask_plugins.cpython-310.pyc
+src/robustraster/__pycache__/earth_engine_auth.cpython-310.pyc
+src/robustraster/__pycache__/input_driver.cpython-310.pyc
+src/robustraster/__pycache__/performance_metric_helper.cpython-310.pyc
+src/robustraster/__pycache__/udf_tuner.cpython-310.pyc
