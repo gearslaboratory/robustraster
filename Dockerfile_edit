@@ -10,13 +10,11 @@ COPY distributed.yaml /etc/dask/distributed.yaml
 WORKDIR /app
 
 # Copy the requirements-lock.txt file to the /app/src directory
-#COPY requirements-lock.txt /app
-#COPY setup.py /app
+COPY requirements-lock.txt /app
+COPY setup.py /app
 
 # Copy your source code to a temporary location first
-#COPY ./src /app/src
+COPY ./src /app/src
 
 # Install the Python package as an editable package
-#RUN pip install --no-cache-dir -e /app
-
-RUN pip install robustraster
+RUN pip install --no-cache-dir -e /app
