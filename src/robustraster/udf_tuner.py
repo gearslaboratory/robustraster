@@ -6,9 +6,72 @@ from . import performance_metric_helper as pmh
 from dask.distributed import performance_report
 
 class UserDefinedFunction:
-    def __init__(self, data_source=None, max_iterations=None):
+    '''
+    A class meant to allow users to apply their own custom functions on a dataset derived
+    from using this package (an example dataset could be an EarthEngineData object).
+    This class can also auto-tune the user function to run on the dataset by deriving the
+    user's available computational resources.
+
+    The only two functions you (as the user) should be concerned with are `tune_user_function` 
+    and `apply_user_function`. Further information on these methods can be found in the
+    docstring and annotations for each respective method.
+
+    Any private attributes or methods (indicated with an underscore at the start of its name) 
+    are not intended for use by the user. Documentation is provided should the user want to 
+    delve deeper into how the class works, but it is not a requirement.
+
+    Example using an EarthEngineData object:
+
+    In this example, my custom function computes the NDVI on a pandas DataFrame object.
+    I then instantiate an object of type UserDefinedFunction. Finally, I call the 
+    `tune_user_function` method, passing in my EarthEngineData object as well as my 
+    function as inputs.
+
+    >>> def compute_ndvi(df):
+    >>>     # Perform your calculations
+    >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
+    >>>     return df
+
+    >>> from robustraster import udf_tuner
+
+    >>> user_defined_func = udf_tuner.UserDefinedFunction()
+    >>> user_defined_func.tune_user_function(earth_engine, compute_ndvi)
+
+    At this point, my function as been "tuned". We can do a full run of the function
+    with the following code:
+    
+    >>> full_result = user_defined_func.apply_user_function(earth_engine, compute_ndvi)
+
+    Instantiating a UserDefinedFunction object only has one optional parameter called
+    `max_iterations`. This parameter is only used if the user wants to use 
+    `tune_user_function` to tune their function on their dataset. 
+
+    Example using an EarthEngineData object and the `max_iterations` parameter.
+    >>> def compute_ndvi(df):
+    >>>     # Perform your calculations
+    >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
+    >>>     return df
+
+    >>> from robustraster import udf_tuner
+
+    >>> user_defined_func = udf_tuner.UserDefinedFunction(max_iteration=10)
+    >>> user_defined_func.tune_user_function(earth_engine, compute_ndvi)
+
+    For more information on what `max_iterations` does, refer to the docstring
+    for `tune_user_function`.
+    '''
+    def __init__(self, max_iterations=None):
+        '''
+        Instantiate the UserDefinedFunction class.
+
+        Parameters:
+        - data_source: An optional parameter. This is only used to 
+        - max_iterations
+        '''
         self._chunk_size_history = None
-        self._max_chunks_limit = data_source.get_max_chunks_limit
+        self._max_chunks_limit = None
+
+        #self._max_chunks_limit = data_source.get_max_chunks_limit
 
         # Initialize iteration count and count for small differences
         self._max_iterations = max_iterations
@@ -241,11 +304,69 @@ class UserDefinedFunction:
         
     
     def tune_user_function(self, data_source, user_func, *args, **kwargs):
+        '''
+        Taking in the user's dataset object and their custom function, tune the 
+        function to fit within the constraints of the user's computational infrastructure.
+
+        How exactly does this tuning work?
+
+        The user's dataset is constructed using xarray, a data structure that is
+        an extension to Python NumPy arrays. A major advantage in using xarray is
+        its ability to parallelize large datasets. This is done through what is 
+        called "chunking". Documentation for chunking can be found here:
+        https://docs.xarray.dev/en/stable/user-guide/dask.html#chunking-and-performance
+
+        Chunking in xarray refers to breaking down a dataset into smaller, 
+        more manageable pieces called "chunks," which are stored and processed independently. 
+        These chunks allow xarray to handle datasets that are too large to fit into memory 
+        all at once. So rather than running a user's function on the entire dataset, a
+        set number of chunks are loaded into memory and the function is run on each chunk
+        in parallel. Computed chunks are then freed from memory (and potentially written to
+        disk if the user chooses so) and more uncomputed chunks are loaded.
+
+        A common question associated with chunking is what is the best chunk size 
+        for my dataset? More information can be found here:
+        https://docs.dask.org/en/latest/array-best-practices.html#select-a-good-chunk-size
+
+        Determining what the optimal chunk size is can be a challenge due to many 
+        external factors such as CPU/RAM constraints and user function complexity. 
+        This is what this method tries to accomplish. 
+        
+        1. The user passes in two parameters: the dataset object and their function name. 
+        
+        2. The user's function is then run on a single chunk of the dataset. The initial size 
+        of the chunk is the smallest it can possibly be. 
+        
+        3. Write the performance metrics of this run to a file. 
+        
+        4. Increase the chunk size by a factor of 2. 
+        
+        5. Repeat steps 1-4 on the newly created chunk. 
+        
+        With each iteration, checks are set in place to compare the compute time of the prior 
+        iteration to the newest iteration. If compute time for the most recent iteration is 
+        bigger than the compute time of the last iteration, then the last iteration's chunk 
+        size is returned. There are a lot more checks than what is mentioned here, but just
+        to keep things as simple as possible, I'm not going to talk about it.
+
+        Benefits of chunking include:
+
+        Scalability: Enables working with datasets larger than your computer's memory.
+        Parallelism: Allows operations to run across multiple CPU cores or even 
+                     distributed systems.
+        Lazy Evaluation: Operations are deferred until explicitly computed, reducing 
+                         unnecessary computations.
+        Optimized I/O: Only the chunks needed for a computation are read from disk, 
+                       minimizing disk access.
+        
+        '''
         if not callable(user_func):
             raise ValueError("The provided function must be callable.")
         
         pmh.create_metrics_report()
         
+        self._max_chunks_limit = getattr(data_source, 'get_max_chunks_limit', lambda: None)()
+
         ds = data_source.dataset
         ds_chunked = self._chunk_data(ds)
         ds_slice = self._get_starting_slice(ds_chunked)

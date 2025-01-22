@@ -10,6 +10,10 @@ class DaskClusterManager:
     for distributed computing tasks. It includes a method to create a Dask cluster of workers 
     needed to parallelize tasks and a method to interact with the workers directly.
 
+    Any private attributes or methods (indicated with an underscore at the start of its name) 
+    are not intended for use by the user. Documentation is provided should the user want to 
+    delve deeper into how the class works, but it is not a requirement.
+
     Attributes:
     - dask_client (Client): An instance of a Dask Client. If not provided during initialization, 
                             this can later be set using the methods provided.
@@ -129,9 +133,3 @@ class DaskClusterManager:
         # Print the dashboard address
         dashboard_address = self.dask_client.dashboard_link
         print(f"Dask dashboard is available at: {dashboard_address}")
-
-    def connect_to_cloud_cluster(self, scheduler_address: str):
-        '''
-        Store dask_client attribute with a Dask Client object configured (WIP) to connect to a Cloud service.
-        '''
-        self.dask_client = Client(scheduler_address)

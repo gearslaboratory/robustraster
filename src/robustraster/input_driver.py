@@ -25,15 +25,13 @@ class LocalRasterReader(DataReaderInterface):
     This class provides functionality to read raster data from a specified file path
     using xarray and rioxarray. It is intended for handling raster data stored locally
     and converts it into an xarray.Dataset for further analysis.
+    
+    Any private attributes or methods (indicated with an underscore at the start of its name) 
+    are not intended for use by the user. Documentation is provided should the user want to 
+    delve deeper into how the class works, but it is not a requirement.
 
-    Attributes:
-    - _file_path (str): The path to the raster file.
-    - _xarray_data (xr.Dataset): The xarray representation of the raster data.
-
-    Example:
+    To instantiate an object of type LocalRasterReader:
     >>> reader = LocalRasterReader("/path/to/raster.tif")
-    >>> data = reader._xarray_data
-    >>> print(data)
     """
     def __init__(self, file_path: str) -> None:
         """
@@ -41,6 +39,9 @@ class LocalRasterReader(DataReaderInterface):
 
         Parameters:
         - file_path (str): The absolute path to the raster file.
+
+        Example:
+        >>> reader = LocalRasterReader("/path/to/raster.tif")
         """
         self._file_path = file_path
         self._xarray_data = self.read_data()
@@ -66,6 +67,10 @@ class EarthEngineData(DataReaderInterface):
     This class is an extension of xee (link to the package: https://github.com/google/Xee) that reads data
     from Google Earth Engine into an xarray object. It is intended to make reading data from Google Earth
     Engine to your machine a bit easier, without necessarily having to learn the xarray data structure.
+
+    Any private attributes or methods (indicated with an underscore at the start of its name) 
+    are not intended for use by the user. Documentation is provided should the user want to 
+    delve deeper into how the class works, but it is not a requirement.
 
     Attributes:
     - _xarray_data: A private attribute of the user's queried Earth Engine data stored into an xarray object.
@@ -124,55 +129,55 @@ class EarthEngineData(DataReaderInterface):
     is used.
 
     Example usage for integrating Earth Engine with a custom cloud masking algorithm:
-        1. Import required libraries and modules: 
-        >>> from robustraster import input_driver
-        >>> import ee
-        >>> import json
+    1. Import required libraries and modules: 
+    >>> from robustraster import input_driver
+    >>> import ee
+    >>> import json
 
-        2. Authenticate and initialize Earth Engine:
-        >>> with open(json_key, 'r') as file:
-        >>>     data = json.load(file)
-        >>> credentials = ee.ServiceAccountCredentials(data["client_email"], json_key)
-        >>> ee.Initialize(credentials=credentials, opt_url='https://earthengine-highvolume.googleapis.com')
+    2. Authenticate and initialize Earth Engine:
+    >>> with open(json_key, 'r') as file:
+    >>>     data = json.load(file)
+    >>> credentials = ee.ServiceAccountCredentials(data["client_email"], json_key)
+    >>> ee.Initialize(credentials=credentials, opt_url='https://earthengine-highvolume.googleapis.com')
 
-        3. Define a cloud masking algorithm for Landsat 8 Surface Reflectance:
-        >>> def prep_sr_l8(image):
-        >>>     # Bit 0 - Fill
-        >>>     # Bit 1 - Dilated Cloud
-        >>>     # Bit 2 - Cirrus
-        >>>     # Bit 3 - Cloud
-        >>>     # Bit 4 - Cloud Shadow
-        >>>     qa_mask = image.select('QA_PIXEL').bitwiseAnd(int('11111', 2)).eq(0)
-        >>>     saturation_mask = image.select('QA_RADSAT').eq(0)
+    3. Define a cloud masking algorithm for Landsat 8 Surface Reflectance:
+    >>> def prep_sr_l8(image):
+    >>>     # Bit 0 - Fill
+    >>>     # Bit 1 - Dilated Cloud
+    >>>     # Bit 2 - Cirrus
+    >>>     # Bit 3 - Cloud
+    >>>     # Bit 4 - Cloud Shadow
+    >>>     qa_mask = image.select('QA_PIXEL').bitwiseAnd(int('11111', 2)).eq(0)
+    >>>     saturation_mask = image.select('QA_RADSAT').eq(0)
 
-        >>>     # Apply scaling factors to appropriate bands
-        >>>     optical_bands = image.select('SR_B.*').multiply(0.0000275).add(-0.2)
-        >>>     thermal_bands = image.select('ST_B.*').multiply(0.00341802).add(149.0)
+    >>>     # Apply scaling factors to appropriate bands
+    >>>     optical_bands = image.select('SR_B.*').multiply(0.0000275).add(-0.2)
+    >>>     thermal_bands = image.select('ST_B.*').multiply(0.00341802).add(149.0)
 
-        >>>     # Return the processed image
-        >>>     return (image.addBands(optical_bands, None, True)
-        >>>                 .addBands(thermal_bands, None, True)
-        >>>                 .updateMask(qa_mask)
-        >>>                 .updateMask(saturation_mask))
+    >>>     # Return the processed image
+    >>>     return (image.addBands(optical_bands, None, True)
+    >>>                 .addBands(thermal_bands, None, True)
+    >>>                 .updateMask(qa_mask)
+    >>>                 .updateMask(saturation_mask))
 
-        4. Prepare parameters for data processing:
-        >>> WSDemo = ee.FeatureCollection("projects/robust-raster/assets/boundaries/WSDemoSHP_Albers")
-        >>> parameters = {
-        >>>     'collection': 'LANDSAT/LC08/C02/T1_L2',
-        >>>     'bands': ['SR_B4', 'SR_B5'],
-        >>>     'start_date': '2020-05-01',
-        >>>     'end_date': '2020-08-31',
-        >>>     'geometry': WSDemo.geometry(),
-        >>>     'crs': 'EPSG:3310',
-        >>>     'scale': 30,
-        >>>     'map_function': prep_sr_l8
-        >>> }
+    4. Prepare parameters for data processing:
+    >>> WSDemo = ee.FeatureCollection("projects/robust-raster/assets/boundaries/WSDemoSHP_Albers")
+    >>> parameters = {
+    >>>     'collection': 'LANDSAT/LC08/C02/T1_L2',
+    >>>     'bands': ['SR_B4', 'SR_B5'],
+    >>>     'start_date': '2020-05-01',
+    >>>     'end_date': '2020-08-31',
+    >>>     'geometry': WSDemo.geometry(),
+    >>>     'crs': 'EPSG:3310',
+    >>>     'scale': 30,
+    >>>     'map_function': prep_sr_l8
+    >>> }
 
-        5. Create the EarthEngineData object:
-        >>> earth_engine = input_driver.EarthEngineData(parameters)
+    5. Create the EarthEngineData object:
+    >>> earth_engine = input_driver.EarthEngineData(parameters)
 
-        6. Print the contents of the data:
-        >>> print(earth_engine.dataset)
+    6. Print the contents of the data:
+    >>> print(earth_engine.dataset)
     """
 
     def __init__(self, parameters: dict) -> None:
