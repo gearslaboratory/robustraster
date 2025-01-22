@@ -11,12 +11,12 @@ import sys
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from input_driver import LocalRasterReader, EarthEngineData
+from input_driver import RasterDataset, EarthEngineDataset
 from earth_engine_auth import initialize_earth_engine
 
-class TestLocalRasterReader(unittest.TestCase):
+class TestRasterDataset(unittest.TestCase):
     ''' 
-    Test cases for the LocalRasterReader class.
+    Test cases for the RasterDataset class.
     '''
     def setUp(self) -> None:
         ''' Set up the unit tests for all methods.'''
@@ -58,7 +58,7 @@ class TestLocalRasterReader(unittest.TestCase):
         - assertIsInstance: if object is of instance xr.DataArray
         '''
         # Test reading raster data successfully
-        reader = LocalRasterReader(self.temp_raster_file)
+        reader = RasterDataset(self.temp_raster_file)
         xarray_data = reader._xarray_data
         
         # Assert that xarray_data is not None and is an instance of xarray DataArray. What about xarray DataSet?
@@ -81,7 +81,7 @@ class TestLocalRasterReader(unittest.TestCase):
         '''
         non_existing_file = "non_existing_file.tif"
         with self.assertRaises(rasterio.errors.RasterioIOError) as context:
-            LocalRasterReader(non_existing_file)
+            RasterDataset(non_existing_file)
         self.assertTrue("No such file or directory" in str(context.exception))
         
     def no_test_read_data_invalid_file(self) -> None:
@@ -98,10 +98,10 @@ class TestLocalRasterReader(unittest.TestCase):
 
         # Test behavior when trying to read an invalid raster file
         with self.assertRaises(rasterio.errors.RasterioIOError) as context:
-            LocalRasterReader(self.temp_invalid_file)
+            RasterDataset(self.temp_invalid_file)
         self.assertTrue("not recognized as a supported file format" in str(context.exception))
 
-class TestEarthEngineData(unittest.TestCase):
+class TestEarthEngineDataset(unittest.TestCase):
     def setUp(self, json_key=None):
         ''' Set up the unit tests for all methods.'''
         initialize_earth_engine(json_key)
@@ -115,7 +115,7 @@ class TestEarthEngineData(unittest.TestCase):
             'scale': None
         }
 
-        #self._reader = EarthEngineData(parameters, json_key)
+        #self._reader = EarthEngineDataset(parameters, json_key)
 
     def test_construct_ee_collection_no_collection(self):
         '''
@@ -131,7 +131,7 @@ class TestEarthEngineData(unittest.TestCase):
             'geometry': ee.Geometry.Point(-122.082, 37.42)
         }
         with self.assertRaises(ee.EEException) as context:
-            reader = EarthEngineData(parameters, json_key=None)
+            reader = EarthEngineDataset(parameters, json_key=None)
             #reader.read_data(parameters)
         self.assertTrue(f"Earth Engine collection was not provided." in str(context.exception))
     
@@ -150,7 +150,7 @@ class TestEarthEngineData(unittest.TestCase):
             'geometry': ee.Geometry.Point(-122.082, 37.42)
         }
         with self.assertRaises(ee.EEException) as context:
-            reader = EarthEngineData(parameters, json_key=None)
+            reader = EarthEngineDataset(parameters, json_key=None)
             #reader.read_data(parameters)
         self.assertTrue(f"Unrecognized argument type" in str(context.exception))
         
@@ -173,7 +173,7 @@ class TestEarthEngineData(unittest.TestCase):
             'map_function': map_function
         }
 
-        reader = EarthEngineData(parameters, json_key=None)
+        reader = EarthEngineDataset(parameters, json_key=None)
         ee_collection = reader._construct_ee_collection(parameters)
         
         # Retrieve the first image from the collection
@@ -199,7 +199,7 @@ class TestEarthEngineData(unittest.TestCase):
             'scale': 0.25
         }
         # Test reading raster data successfully
-        reader = EarthEngineData(parameters, json_key=None)
+        reader = EarthEngineDataset(parameters, json_key=None)
         xarray_data = reader._xarray_data
         #xarray_data = reader.read_data(parameters)
 

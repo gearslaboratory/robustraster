@@ -70,7 +70,7 @@ def convert_to_gigabytes(ram_str):
       
 def get_wall_time_and_memory():
     # Open the HTML file
-    with open('dask-report.html', 'r', encoding='utf-8') as file:
+    with open('dask_report.html', 'r', encoding='utf-8') as file:
         # Read the content of the file
         content = file.read()
 
@@ -158,4 +158,10 @@ def write_performance_metrics_to_file(ds):
         # Write the row of results
         writer.writerow(row)
         
-    os.remove('dask-report.html')
+    os.remove('dask_report.html')
+
+def clean_up_files():
+    if os.path.exists("metrics_report.csv"):
+        os.remove('metrics_report.csv')
+    if os.path.exists('dask_report.html'):
+        os.remove('dask_report.html')

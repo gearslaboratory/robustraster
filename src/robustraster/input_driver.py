@@ -18,7 +18,7 @@ class DataReaderInterface(ABC):
             with self.assertRaises(TypeError):
                 reader = DataReaderInterface()  # This should raise a TypeError
 
-class LocalRasterReader(DataReaderInterface):
+class RasterDataset(DataReaderInterface):
     """
     A reader for local raster files.
 
@@ -30,18 +30,18 @@ class LocalRasterReader(DataReaderInterface):
     are not intended for use by the user. Documentation is provided should the user want to 
     delve deeper into how the class works, but it is not a requirement.
 
-    To instantiate an object of type LocalRasterReader:
-    >>> reader = LocalRasterReader("/path/to/raster.tif")
+    To instantiate an object of type RasterDataset:
+    >>> reader = RasterDataset("/path/to/raster.tif")
     """
     def __init__(self, file_path: str) -> None:
         """
-        Initialize a LocalRasterReader instance.
+        Initialize a RasterDataset instance.
 
         Parameters:
         - file_path (str): The absolute path to the raster file.
 
         Example:
-        >>> reader = LocalRasterReader("/path/to/raster.tif")
+        >>> reader = RasterDataset("/path/to/raster.tif")
         """
         self._file_path = file_path
         self._xarray_data = self.read_data()
@@ -60,7 +60,7 @@ class LocalRasterReader(DataReaderInterface):
             print(f"Error reading raster data from {e}:")
             raise
 
-class EarthEngineData(DataReaderInterface):
+class EarthEngineDataset(DataReaderInterface):
     """
     A reader for Google Earth Engine data.
 
@@ -99,7 +99,7 @@ class EarthEngineData(DataReaderInterface):
     
     - _read_data: A private method that uses xee to read the data query from Earth Engine into an xarray object.
     
-    To instantiate an EarthEngineData object, the user must pass in a dictionary object of parameters. Below is an example
+    To instantiate an EarthEngineDataset object, the user must pass in a dictionary object of parameters. Below is an example
     `parameters` variable. 
 
     >>> parameters = {
@@ -173,8 +173,8 @@ class EarthEngineData(DataReaderInterface):
     >>>     'map_function': prep_sr_l8
     >>> }
 
-    5. Create the EarthEngineData object:
-    >>> earth_engine = input_driver.EarthEngineData(parameters)
+    5. Create the EarthEngineDataset object:
+    >>> earth_engine = input_driver.EarthEngineDataset(parameters)
 
     6. Print the contents of the data:
     >>> print(earth_engine.dataset)
@@ -182,7 +182,7 @@ class EarthEngineData(DataReaderInterface):
 
     def __init__(self, parameters: dict) -> None:
         """
-        Instantiate the EarthEngineData class. To instantiate an EarthEngineData object, 
+        Instantiate the EarthEngineDataset class. To instantiate an EarthEngineDataset object, 
         the user must pass in a dictionary object of parameters. Below is an example
         `parameters` variable. 
 
@@ -257,8 +257,8 @@ class EarthEngineData(DataReaderInterface):
         >>>     'map_function': prep_sr_l8
         >>> }
 
-        5. Create the EarthEngineData object:
-        >>> earth_engine = input_driver.EarthEngineData(parameters)
+        5. Create the EarthEngineDataset object:
+        >>> earth_engine = input_driver.EarthEngineDataset(parameters)
 
         6. Print the contents of the data:
         >>> print(earth_engine.dataset)
@@ -276,7 +276,7 @@ class EarthEngineData(DataReaderInterface):
         A property meant to retrieve the xarray Dataset stored in _xarray_data.
 
         Example:
-        >>> earth_engine = input_driver.EarthEngineData(parameters)
+        >>> earth_engine = input_driver.EarthEngineDataset(parameters)
         >>> dataset = earth_engine.dataset
         >>> print(dataset)
         """
