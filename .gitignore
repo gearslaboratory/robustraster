@@ -31,3 +31,5 @@ src/robustraster/__pycache__/earth_engine_auth.cpython-310.pyc
 src/robustraster/__pycache__/input_driver.cpython-310.pyc
 src/robustraster/__pycache__/performance_metric_helper.cpython-310.pyc
 src/robustraster/__pycache__/udf_tuner.cpython-310.pyc
+ndvi_local.tif
+ndvi.tif

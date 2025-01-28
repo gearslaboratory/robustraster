@@ -1,7 +1,7 @@
 import xarray as xr
 import dask.array as da
 import pandas as pd
-from typing import Optional
+from typing import Optional, Callable
 from datetime import datetime
 import json
 from .input_driver import RasterDataset, EarthEngineDataset
@@ -24,13 +24,13 @@ class UserDefinedFunction:
     are not intended for use by the user. Documentation is provided should the user want to 
     delve deeper into how the class works, but it is not a requirement.
 
-    Example of how to instantiate a UserDefinedFunction object, running
+    Here is an example of how to instantiate a UserDefinedFunction object, running
     `tune_user_function`, and finally running `apply_user_function`:
 
-    In this example, my custom function computes the NDVI on a pandas DataFrame object.
-    I then instantiate an object of type UserDefinedFunction. Finally, I call the 
-    `tune_user_function` method, passing in my EarthEngineDataset object as well as my 
-    function as inputs.
+    In this example, I wrote my own custom function computes the NDVI on a pandas 
+    DataFrame object. I then instantiate an object of type UserDefinedFunction. 
+    Finally, I call the `tune_user_function` method, passing in my EarthEngineDataset
+    object as well as my function as inputs.
 
     >>> def compute_ndvi(df):
     >>>     # Perform your calculations
@@ -47,9 +47,7 @@ class UserDefinedFunction:
     
     >>> full_result = user_defined_func.apply_user_function(earth_engine, compute_ndvi)
 
-    Instantiating a UserDefinedFunction object only has one optional parameter called
-    `max_iterations`. This parameter is only used if the user wants to use 
-    `tune_user_function` to tune their function on their dataset. 
+    Running `tune_user_function` has an optional parameter called `max_iterations`.
 
     Example of running `tune_user_function` and the `max_iterations` parameter.
     >>> def compute_ndvi(df):
@@ -59,26 +57,21 @@ class UserDefinedFunction:
 
     >>> from robustraster import udf_tuner
 
-    >>> user_defined_func = udf_tuner.UserDefinedFunction(max_iteration=10)
-    >>> user_defined_func.tune_user_function(earth_engine, compute_ndvi)
+    >>> user_defined_func = udf_tuner.UserDefinedFunction()
+    >>> user_defined_func.tune_user_function(earth_engine, compute_ndvi, max_iteration=10)
 
     For more information on what `max_iterations` does, refer to the docstring
     for `tune_user_function`.
     '''
-    def __init__(self, max_iterations=None):
+    def __init__(self):
         '''
         Instantiate the UserDefinedFunction class.
-
-        Parameters:
-        - max_iterations: 
         '''
         self._tuned_chunk_size = None
         self._max_chunks_limit = None
 
-        #self._max_chunks_limit = data_source.get_max_chunks_limit
-
         # Initialize iteration count and count for small differences
-        self._max_iterations = max_iterations
+        self.max_iterations = None
         self._iteration_count = 0
         self._small_diff_count = 0
     
@@ -121,19 +114,41 @@ class UserDefinedFunction:
         else:
             return False
 
+#    def _get_starting_slice(self, ds):
+#        # Get the name of the first dimension
+#        first_dim_name = list(ds.dims)[0]
+#
+#        # Get the size of the first dimension
+#        first_dim_size = ds.sizes[first_dim_name]
+#
+#        # Select a single chunk
+#        ds_slice = ds.isel(
+#            time=slice(0, first_dim_size),  # First time chunk
+#            X=slice(0, 1),   # First X chunk
+#            Y=slice(0, 1)    # First Y chunk
+#        )
+#
+#        return ds_slice  
+
     def _get_starting_slice(self, ds):
-        # Get the name of the first dimension
-        first_dim_name = list(ds.dims)[0]
+        # Get the dimension names
+        dim_names = list(ds.dims)
+        
+        # Find the dimension that should be sliced specifically (e.g., first dimension)
+        specific_dim_name = dim_names[0]  # Assume the first dimension needs specific slicing
 
-        # Get the size of the first dimension
-        first_dim_size = ds.sizes[first_dim_name]
+        # Dynamically create slices for all dimensions
+        slices = {}
+        for dim in dim_names:
+            if dim == specific_dim_name:
+                # Slice the specific dimension from 0 to its full size
+                slices[dim] = slice(0, ds.sizes[dim])  
+            else:
+                # Slice other dimensions from 0 to 1
+                slices[dim] = slice(0, 1)
 
-        # Select a single chunk
-        ds_slice = ds.isel(
-            time=slice(0, first_dim_size),  # First time chunk
-            X=slice(0, 1),   # First X chunk
-            Y=slice(0, 1)    # First Y chunk
-        )
+        # Select the slice for the first chunk
+        ds_slice = ds.isel(**slices)
 
         return ds_slice
 
@@ -162,7 +177,7 @@ class UserDefinedFunction:
             
         while True:
             self._iteration_count += 1
-
+            
             test = xr.map_blocks(self._user_function_wrapper, 
                                 ds_slice, 
                                 args=(user_func,) + args, 
@@ -229,7 +244,7 @@ class UserDefinedFunction:
                         return self._get_tuned_xarray(ds, bigger_slice, user_func, *args, **kwargs)
             
             # Break the loop if max_iterations is set and limit is reached
-            if self._max_iterations is not None and self._iteration_count >= self._max_iterations:
+            if self.max_iterations is not None and self._iteration_count >= self.max_iterations:
                 self._iteration_count = 0
                 self._small_diff_count = 0
 
@@ -363,9 +378,9 @@ class UserDefinedFunction:
         ds_output = df_output.to_xarray()
         return ds_output
         
-    
     def tune_user_function(self, data_source: RasterDataset | EarthEngineDataset, 
-                           user_func: str, *args, **kwargs):
+                           user_func: Callable[[], pd.DataFrame], max_iterations: Optional[int] = None, 
+                           *args, **kwargs):
         """
         Taking in the user's dataset object and their custom function, tune the 
         function to fit within the constraints of the user's computational infrastructure.
@@ -403,7 +418,13 @@ class UserDefinedFunction:
         
         4. Increase the chunk size by a factor of 2. 
         
-        5. Repeat steps 1-4 on the newly created chunk. 
+        5. Repeat steps 1-4 on the newly created chunk until an optimal chunk size is found.
+
+        6. Writes the resulting optimal chunk size to a JSON file that can be passed into
+        `apply_user_function` (although if the UserDefinedFunction object that tuned the
+        user's function is still instantiated, this is not required). This is useful if you
+        want to run `apply_user_function` at a later time and don't want to tune your function
+        again. The JSON will have your progress from the last tuning session saved.
         
         With each iteration, checks are set in place to compare the compute time of the prior 
         iteration to the newest iteration. If compute time of the most recent iteration is 
@@ -423,20 +444,102 @@ class UserDefinedFunction:
         
         Parameters:
         - data_source (RasterDataset or EarthEngineDataset): The user's dataset object.
-        - user_func (str): The user's function name.
+        - user_func (Callable[[], pd.DataFrame]): The user's function name. For now,
+                                                  user functions need to return pandas
+                                                  DataFrame. See the example below for an
+                                                  example function.
+        - max_iterations (int): An optional argument sets the maximum number of iterations.
         - args: Positional arguments that will be passed into their custom function.
         - kwargs: Keyword arguments that will be passed into their custom function.
+
+        Here is an example of how to instantiate a UserDefinedFunction object, running
+        `tune_user_function`, and finally running `apply_user_function`:
+
+        In this example, I wrote my own custom function that computes the NDVI on a pandas 
+        DataFrame object. I then instantiate an object of type UserDefinedFunction. 
+        Finally, I call the `tune_user_function` method, passing in my EarthEngineDataset
+        object as well as my function as inputs.
+
+        >>> def compute_ndvi(df):
+        >>>     # Perform your calculations
+        >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
+        >>>     return df
+
+        >>> from robustraster import udf_tuner
+        >>> from robustraster import input_driver
+
+        # See the docstring for EarthEngineDataset for more info on this object type.
+        >>> earth_engine = input_driver.EarthEngineDataset(parameters=test_parameters)
+
+        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func.tune_user_function(data_source=earth_engine, user_func=compute_ndvi)
+
+        At this point, my function as been "tuned". We can do a full run of the function
+        with the following code:
+        
+        >>> full_result = user_defined_func.apply_user_function(data_source=earth_engine, 
+                                            user_func=compute_ndvi)
+
+        Running `tune_user_function` has an optional parameter called `max_iterations`.
+
+        Example of running `tune_user_function` and the `max_iterations` parameter.
+        >>> def compute_ndvi(df):
+        >>>     # Perform your calculations
+        >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
+        >>>     return df
+
+        >>> from robustraster import udf_tuner
+
+        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func.tune_user_function(data_source=earth_engine, user_func=compute_ndvi, 
+                                                 max_iterations=10)
+
+        This will perform steps 1-4 ten times.
+
+        If your function requires multiple parameters to be passed:
+
+        # In this example, I added a new positional argument, `numba`.
+        >>> def compute_ndvi(df, numba):
+        >>>     # Perform your calculations
+        >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4'] + numba) / (df['SR_B5'] + df['SR_B4'])
+        >>>     return df
+
+        You can pass in additional positional or keyword arguments like the following:
+
+        Example passing in an additional positional argument:
+        >>> from robustraster import udf_tuner
+
+        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func.tune_user_function(data_source=earth_engine, 
+                                                 user_func=compute_ndvi, 
+                                                 max_iterations=10, 
+                                                 666)
+
+        666 in this example will get passed into `compute_ndvi` as `numba`.
+
+        Example passing in an additional keyword argument:
+        >>> from robustraster import udf_tuner
+
+        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func.tune_user_function(data_source=earth_engine, 
+                                                 user_func=compute_ndvi, 
+                                                 max_iterations=10, 
+                                                 numba=666)
         """
         if not callable(user_func):
             raise ValueError("The provided function must be callable.")
-        
+
         # Create a metrics report summarizing the performance of each test run.
         pmh.create_metrics_report()
 
         # No need for user interaction here! This will check if the dataset was obtained
         # from an online repo (like Google Earth Engine, for example). If it is, some
         # online data catalogs have a data quota that this code accounts for.
-        self._max_chunks_limit = getattr(data_source, 'get_max_chunks_limit', lambda: None)
+        self._max_chunks_limit = getattr(data_source, 'get_max_chunks_limit', None)
+
+        print(self._max_chunks_limit)
+        # Set the maximum number of times the tuning code can iterate over the data.
+        self.max_iterations = max_iterations
 
         # Create a single chunk that's the size of the dataset. Then pull a slice of size 1
         # from the chunk to use for testing.
@@ -450,7 +553,90 @@ class UserDefinedFunction:
                             user_func: str, chunks: Optional[dict | str] = None, *args, **kwargs):
         """
         Apply the user's custom function on the dataset. If the user ran `tune_user_function`
-        prior, 
+        prior, the user can use the same UserDefinedFunction object to run `apply_user_function`
+        on their data. If done this way, this will run the tuned function on the dataset.
+
+        Parameters:
+        - data_source (RasterDataset or EarthEngineDataset): The user's dataset object.
+        - user_func (Callable[[], pd.DataFrame]): The user's function name. For now,
+                                                  user functions need to return pandas
+                                                  DataFrames. See the example below for an
+                                                  example function.
+        - chunks (Optional[dict | str]): An optional parameter that allows users to pass in
+                                         their own custom chunk size on the dataset. For more
+                                         information on chunks, refer to the docstring for 
+                                         `tune_user_function`. There is an explanation for 
+                                         the benefits of chunking there. The user can pass in
+                                         either a dictionary object containing the chunk parameters
+                                         or a file path to the output JSON file generated when
+                                         running `tune_user_function`. Otherwise,
+                                         `apply_user_function` will auto-determine the appropriate
+                                         chunk size for the dataset.
+        - args: Positional arguments that will be passed into their custom function.
+        - kwargs: Keyword arguments that will be passed into their custom function.
+
+        Example 1: Running `tune_user_function` first, and then `apply_user_function` afterwards.
+        >>> def compute_ndvi(df):
+        >>>     # Perform your calculations
+        >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
+        >>>     return df
+
+        >>> from robustraster import udf_tuner
+        >>> from robustraster import input_driver
+
+        # See the docstring for EarthEngineDataset for more info on this object type.
+        >>> earth_engine = input_driver.EarthEngineDataset(parameters)
+        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func.tune_user_function(data_source=earth_engine, user_func=compute_ndvi)
+        >>> full_result = user_defined_func.apply_user_function(data_source=earth_engine, user_func=compute_ndvi) 
+
+        `tune_user_function` is optional. You can run `apply_user_function` without it.
+
+        Example 2:  Running `apply_user_function` without running `tune_user_function`.
+        >>> full_result = user_defined_func.apply_user_function(earth_engine, compute_ndvi)
+
+        Example 3: Running `apply_user_function` and passing in the JSON that 
+                   `tune_user_function` generates. This could be useful if you boot up 
+                   your code at a later time and don't want to run `tune_user_function`
+                   to tune your function again.
+
+        >>> full_result = user_defined_func.apply_user_function(data_source=earth_engine, user_func=compute_ndvi, 
+                                                               chunks="optimal_chunks_20250124_141211.json") 
+
+        Example 4: Running `apply_user_function` and passing in a dictionary object of the chunk
+                   size. If the user wants the option to specify a custom chunk size without
+                   tuning, they can do so here.
+        
+        >>> my_custom_chunks = {'time': 48
+                                'X': 256
+                                'Y': 512}
+
+        >>> full_result = user_defined_func.apply_user_function(data_source=earth_engine, user_func=compute_ndvi, 
+                                                               chunks=my_custom_chunks) 
+        
+        If your function requires multiple parameters to be passed:
+
+        # In this example, I added a new positional argument, `numba`.
+        >>> def compute_ndvi(df, numba):
+        >>>     # Perform your calculations
+        >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4'] + numba) / (df['SR_B5'] + df['SR_B4'])
+        >>>     return df
+
+        You can pass in additional positional or keyword arguments like the following:
+
+        Example passing in an additional positional argument:
+        >>> from robustraster import udf_tuner
+
+        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func.apply_user_function(earth_engine, compute_ndvi, max_iteration=10, 666)
+
+        666 in this example will get passed into `compute_ndvi` as `numba`.
+
+        Example passing in an additional keyword argument:
+        >>> from robustraster import udf_tuner
+
+        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func.tune_user_function(earth_engine, compute_ndvi, max_iteration=10, numba=666)
         """
         if not callable(user_func):
             raise ValueError("The provided function must be callable.")

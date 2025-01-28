@@ -44,7 +44,19 @@ class RasterDataset(DataReaderInterface):
         >>> reader = RasterDataset("/path/to/raster.tif")
         """
         self._file_path = file_path
-        self._xarray_data = self.read_data()
+        self._xarray_data = self._read_data()
+    
+    @property
+    def dataset(self):
+        """
+        A property meant to retrieve the xarray Dataset stored in _xarray_data.
+
+        Example:
+        >>> local_raster = input_driver.RasterDataset('./raster.tif')
+        >>> dataset = local_raster.dataset
+        >>> print(dataset)
+        """
+        return self._xarray_data
     
     def _read_data(self) -> xr.Dataset:
         """
@@ -53,12 +65,27 @@ class RasterDataset(DataReaderInterface):
         Returns:
         - xr.Dataset: An xarray Dataset of the raster object.
         """
-        try:
-            with rioxarray.open_rasterio(self._file_path, band_as_variable=True) as xarray_data:
-                return xarray_data
-        except rasterio.errors.RasterioIOError as e:
-            print(f"Error reading raster data from {e}:")
-            raise
+        # Ensure raster_paths is a list, even if a single string is passed
+        if isinstance(self._file_path, str):
+            raster_paths = [self._file_path]
+        else:
+            raster_paths = self._file_path
+        datasets = []
+    
+        for i, raster_path in enumerate(raster_paths):
+            try:
+                with rioxarray.open_rasterio(raster_path, band_as_variable=True) as xarray_data:
+                    # Add a new "index" dimension and assign the current index
+                    xarray_data = xarray_data.expand_dims(time=[i + 1])  # Use i+1 for 1-based indexing
+
+                    datasets.append(xarray_data)
+            except rasterio.errors.RasterioIOError as e:
+                print(f"Error reading raster data from {raster_path}: {e}")
+                raise
+        
+        # Combine all datasets along the "index" dimension
+        combined_dataset = xr.concat(datasets, dim="time")
+        return combined_dataset
 
 class EarthEngineDataset(DataReaderInterface):
     """
@@ -162,7 +189,7 @@ class EarthEngineDataset(DataReaderInterface):
 
     4. Prepare parameters for data processing:
     >>> WSDemo = ee.FeatureCollection("projects/robust-raster/assets/boundaries/WSDemoSHP_Albers")
-    >>> parameters = {
+    >>> test_parameters = {
     >>>     'collection': 'LANDSAT/LC08/C02/T1_L2',
     >>>     'bands': ['SR_B4', 'SR_B5'],
     >>>     'start_date': '2020-05-01',
@@ -174,7 +201,7 @@ class EarthEngineDataset(DataReaderInterface):
     >>> }
 
     5. Create the EarthEngineDataset object:
-    >>> earth_engine = input_driver.EarthEngineDataset(parameters)
+    >>> earth_engine = input_driver.EarthEngineDataset(parameters=test_parameters)
 
     6. Print the contents of the data:
     >>> print(earth_engine.dataset)
@@ -184,9 +211,9 @@ class EarthEngineDataset(DataReaderInterface):
         """
         Instantiate the EarthEngineDataset class. To instantiate an EarthEngineDataset object, 
         the user must pass in a dictionary object of parameters. Below is an example
-        `parameters` variable. 
+        `test_parameters` variable. 
 
-        >>> parameters = {
+        >>> test_parameters = {
         >>>     'collection': 'LANDSAT/LC08/C02/T1_L2',
         >>>     'bands': ['SR_B4', 'SR_B5'],
         >>>     'start_date': '2020-05-01',
@@ -246,7 +273,7 @@ class EarthEngineDataset(DataReaderInterface):
 
         4. Prepare parameters for data processing:
         >>> WSDemo = ee.FeatureCollection("projects/robust-raster/assets/boundaries/WSDemoSHP_Albers")
-        >>> parameters = {
+        >>> test_parameters = {
         >>>     'collection': 'LANDSAT/LC08/C02/T1_L2',
         >>>     'bands': ['SR_B4', 'SR_B5'],
         >>>     'start_date': '2020-05-01',
@@ -258,7 +285,7 @@ class EarthEngineDataset(DataReaderInterface):
         >>> }
 
         5. Create the EarthEngineDataset object:
-        >>> earth_engine = input_driver.EarthEngineDataset(parameters)
+        >>> earth_engine = input_driver.EarthEngineDataset(parameters=test_parameters)
 
         6. Print the contents of the data:
         >>> print(earth_engine.dataset)
