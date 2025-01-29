@@ -85,6 +85,7 @@ class RasterDataset(DataReaderInterface):
         
         # Combine all datasets along the "index" dimension
         combined_dataset = xr.concat(datasets, dim="time")
+
         return combined_dataset
 
 class EarthEngineDataset(DataReaderInterface):

@@ -537,7 +537,6 @@ class UserDefinedFunction:
         # online data catalogs have a data quota that this code accounts for.
         self._max_chunks_limit = getattr(data_source, 'get_max_chunks_limit', None)
 
-        print(self._max_chunks_limit)
         # Set the maximum number of times the tuning code can iterate over the data.
         self.max_iterations = max_iterations
 
