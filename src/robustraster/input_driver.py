@@ -30,8 +30,20 @@ class RasterDataset(DataReaderInterface):
     are not intended for use by the user. Documentation is provided should the user want to 
     delve deeper into how the class works, but it is not a requirement.
 
+    Public Methods (these are functions that are openly available for users to use):
+    - dataset: A property that obtains the dataset's metadata.
+
+    Private Methods (these are functions that the user will NOT use that are called behind the scenes):
+    - _read_data: A private method that reads the user's dataset into an xarray Dataset once the user 
+                  instantiates the class.
+
     To instantiate an object of type RasterDataset:
     >>> reader = RasterDataset("/path/to/raster.tif")
+
+    If you would like to pass in multiple raster files:
+    >>> from robustraster import input_driver
+    >>> raster_path_list = ['./raster1.tif', './raster2.tif']
+    >>> local_raster = input_driver.RasterDataset(raster_path_list)
     """
     def __init__(self, file_path: str) -> None:
         """
@@ -78,7 +90,22 @@ class RasterDataset(DataReaderInterface):
                     # Add a new "index" dimension and assign the current index
                     xarray_data = xarray_data.expand_dims(time=[i + 1])  # Use i+1 for 1-based indexing
 
-                    datasets.append(xarray_data)
+                    # Dynamically get the dimensions (first one should be 'time')
+                    dim_names = list(xarray_data.dims)
+
+                    # Initialize chunk sizes with 'time' set to 48
+                    chunk_sizes = {dim_names[0]: 48}  # Assuming 'time' is the first dimension
+
+                    # Set chunk sizes for the other dimensions (second and third)
+                    if len(dim_names) >= 2:
+                        chunk_sizes[dim_names[1]] = 512  # Set chunk size for the second dimension
+                    if len(dim_names) >= 3:
+                        chunk_sizes[dim_names[2]] = 256  # Set chunk size for the third dimension
+                    
+                    # Apply chunking with the defined chunk sizes
+                    chunked_data = xarray_data.chunk(chunk_sizes)
+
+                    datasets.append(chunked_data)
             except rasterio.errors.RasterioIOError as e:
                 print(f"Error reading raster data from {raster_path}: {e}")
                 raise
@@ -114,7 +141,7 @@ class EarthEngineDataset(DataReaderInterface):
                             the tuning functionality of this package. However, the user does not need to understand
                             how to use this function (unless they choose to set a chunk size themselves).
 
-    Private Methods (these are functions that the user will NOT need to use that are called behind the scenes):
+    Private Methods (these are functions that the user will NOT use that are called behind the scenes):
 
     - _get_data_type_in_bytes: A private method that obtains the data type of the Earth Engine bands (stored as "data variables" in
                                the xarray object).
@@ -299,7 +326,7 @@ class EarthEngineDataset(DataReaderInterface):
         self._max_chunks_limit = self._auto_compute_max_chunks()
     
     @property
-    def dataset(self):
+    def dataset(self) -> xr.Dataset:
         """
         A property meant to retrieve the xarray Dataset stored in _xarray_data.
 
@@ -311,7 +338,7 @@ class EarthEngineDataset(DataReaderInterface):
         return self._xarray_data
     
     @property
-    def get_max_chunks_limit(self):
+    def get_max_chunks_limit(self) -> dict:
         """
         A property not intended for user use. This is called if the user wants to use
         the tuning functionality of this package. However, the user does not need to understand
@@ -330,7 +357,7 @@ class EarthEngineDataset(DataReaderInterface):
         first_data_var = list(self._xarray_data.data_vars)[0]
         return self._xarray_data[first_data_var].dtype.itemsize
  
-    def _auto_compute_max_chunks(self, request_byte_limit=2**20 * 48):
+    def _auto_compute_max_chunks(self, request_byte_limit=2**20 * 48) -> dict:
         """
         A private method not intended for user use. Computes the appropriate chunk sizes for all three 
         dimension given Earth Engine's request payload size limit. Ensures the chunk size gets as close 
@@ -392,7 +419,7 @@ class EarthEngineDataset(DataReaderInterface):
                 ' bug).'
             )
     
-        return {'time': index, 'X': width, 'Y': height}
+        return {f'{first_dim_name}': index, 'X': width, 'Y': height}
 
 
     def _construct_ee_collection(self, parameters: dict) -> ee.ImageCollection:

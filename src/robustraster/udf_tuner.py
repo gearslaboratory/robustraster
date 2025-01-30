@@ -16,12 +16,19 @@ class UserDefinedFunction:
     This class can also auto-tune the user function to run on the dataset by deriving the
     user's available computational resources.
 
-    The only two functions you (as the user) should be concerned with are `tune_user_function` 
-    and `apply_user_function`. Further information on these methods can be found in the
-    docstring and annotations for each respective method.
+    Public Methods (these are functions that are openly available for users to use):
+    - tune_user_function: Taking in the user's dataset object and their custom function, tune the 
+                          function to fit within the constraints of the user's computational 
+                          infrastructure.
+    - apply_user_function: Apply the user's custom function on the dataset.
+    
+    There are many other private methods in this class, but the only two functions you 
+    (as the user) should be concerned with are `tune_user_function` and `apply_user_function`. 
+    Further information on these methods can be found in the docstring and annotations for each 
+    respective method.
 
     Any private attributes or methods (indicated with an underscore at the start of its name) 
-    are not intended for use by the user. Documentation is provided should the user want to 
+    are not intended for use by the user. Some documentation is provided should the user want to 
     delve deeper into how the class works, but it is not a requirement.
 
     Here is an example of how to instantiate a UserDefinedFunction object, running

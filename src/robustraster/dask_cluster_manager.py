@@ -21,8 +21,6 @@ class DaskClusterManager:
     Methods:
     - get_dask_client: A property that returns the current Dask Client instance, allowing the user 
                        to monitor or interact with it.
-
-    - _bytes_to_gigabytes: A private method to convert memory values from bytes to gigabytes.
     
     - create_cluster: A public method that creates a Dask cluster of workers needed to parallelize tasks.
 
@@ -30,7 +28,6 @@ class DaskClusterManager:
     >>> from robustraster import dask_cluster_manager
     >>> dask_cluster = dask_cluster_manager.DaskClusterManager()
     >>> dask_cluster.create_cluster(mode="test")
-    >>> dask_client = dask_cluster.get_dask_client
     """
     def __init__(self, dask_client: Client = None) -> None:
         '''
@@ -71,9 +68,9 @@ class DaskClusterManager:
         Parameters:
         - mode (str): The mode for configuring the cluster. 
                       "full" (default): Optimized for one worker per CPU core. RAM will be split evenly between each worker.
-                                         For example, if you have a machine with 16 CPU cores and 32GB of RAM, "full" will
-                                         create a cluster of 16 workers with each worker having 2GB of RAM. User can also 
-                                         specify specific configurations by adding in keyword arguments.
+                                        For example, if you have a machine with 16 CPU cores and 32GB of RAM, "full" will
+                                        create a cluster of 16 workers with each worker having 2GB of RAM. Users can also 
+                                        specify specific configurations by adding in keyword arguments.
                       "test": Optimized for a single worker. Only use this mode if you want the code to auto-determine the
                               appropriate chunk size for your machine.
 
