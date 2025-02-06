@@ -11,7 +11,7 @@ import sys
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from input_driver import RasterDataset, EarthEngineDataset
+from dataset_manager import RasterDataset, EarthEngineDataset
 from earth_engine_auth import initialize_earth_engine
 
 class TestRasterDataset(unittest.TestCase):

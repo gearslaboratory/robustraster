@@ -4,7 +4,7 @@ import pandas as pd
 from typing import Optional, Callable
 from datetime import datetime
 import json
-from .input_driver import RasterDataset, EarthEngineDataset
+from .dataset_manager import RasterDataset, EarthEngineDataset
 from . import performance_metric_helper as pmh
 
 from dask.distributed import performance_report
@@ -37,9 +37,9 @@ class UserDefinedFunction:
     >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
     >>>     return df
 
-    >>> from robustraster import udf_tuner
+    >>> from robustraster import udf_manager
 
-    >>> user_defined_func = udf_tuner.UserDefinedFunction()
+    >>> user_defined_func = udf_manager.UserDefinedFunction()
     >>> user_defined_func.tune_user_function(earth_engine, compute_ndvi)
 
     At this point, my function as been "tuned". We can do a full run of the function
@@ -55,9 +55,9 @@ class UserDefinedFunction:
     >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
     >>>     return df
 
-    >>> from robustraster import udf_tuner
+    >>> from robustraster import udf_manager
 
-    >>> user_defined_func = udf_tuner.UserDefinedFunction()
+    >>> user_defined_func = udf_manager.UserDefinedFunction()
     >>> user_defined_func.tune_user_function(earth_engine, compute_ndvi, max_iteration=10)
 
     For more information on what `max_iterations` does, refer to the docstring
@@ -402,7 +402,7 @@ class UserDefinedFunction:
         disk if the user chooses so) and more uncomputed chunks are loaded.
 
         A common question associated with chunking is what is the best chunk size 
-        for a dataset? More information on this subject Scan be found here:
+        for a dataset? More information on this subject can be found here:
         https://docs.dask.org/en/latest/array-best-practices.html#select-a-good-chunk-size
 
         Determining an optimal chunk size can be a challenge due to many external
@@ -465,13 +465,13 @@ class UserDefinedFunction:
         >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
         >>>     return df
 
-        >>> from robustraster import udf_tuner
-        >>> from robustraster import input_driver
+        >>> from robustraster import udf_manager
+        >>> from robustraster import dataset_manager
 
         # See the docstring for EarthEngineDataset for more info on this object type.
-        >>> earth_engine = input_driver.EarthEngineDataset(parameters=test_parameters)
+        >>> earth_engine = dataset_manager.EarthEngineDataset(parameters=test_parameters)
 
-        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func = udf_manager.UserDefinedFunction()
         >>> user_defined_func.tune_user_function(data_source=earth_engine, user_func=compute_ndvi)
 
         At this point, my function as been "tuned". We can do a full run of the function
@@ -488,9 +488,9 @@ class UserDefinedFunction:
         >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
         >>>     return df
 
-        >>> from robustraster import udf_tuner
+        >>> from robustraster import udf_manager
 
-        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func = udf_manager.UserDefinedFunction()
         >>> user_defined_func.tune_user_function(data_source=earth_engine, user_func=compute_ndvi, 
                                                  max_iterations=10)
 
@@ -507,9 +507,9 @@ class UserDefinedFunction:
         You can pass in additional positional or keyword arguments like the following:
 
         Example passing in an additional positional argument:
-        >>> from robustraster import udf_tuner
+        >>> from robustraster import udf_manager
 
-        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func = udf_manager.UserDefinedFunction()
         >>> user_defined_func.tune_user_function(data_source=earth_engine, 
                                                  user_func=compute_ndvi, 
                                                  max_iterations=10, 
@@ -518,9 +518,9 @@ class UserDefinedFunction:
         666 in this example will get passed into `compute_ndvi` as `numba`.
 
         Example passing in an additional keyword argument:
-        >>> from robustraster import udf_tuner
+        >>> from robustraster import udf_manager
 
-        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func = udf_manager.UserDefinedFunction()
         >>> user_defined_func.tune_user_function(data_source=earth_engine, 
                                                  user_func=compute_ndvi, 
                                                  max_iterations=10, 
@@ -580,12 +580,12 @@ class UserDefinedFunction:
         >>>     df['ndvi'] = (df['SR_B5'] - df['SR_B4']) / (df['SR_B5'] + df['SR_B4'])
         >>>     return df
 
-        >>> from robustraster import udf_tuner
-        >>> from robustraster import input_driver
+        >>> from robustraster import udf_manager
+        >>> from robustraster import dataset_manager
 
         # See the docstring for EarthEngineDataset for more info on this object type.
-        >>> earth_engine = input_driver.EarthEngineDataset(parameters)
-        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> earth_engine = dataset_manager.EarthEngineDataset(parameters)
+        >>> user_defined_func = udf_manager.UserDefinedFunction()
         >>> user_defined_func.tune_user_function(data_source=earth_engine, user_func=compute_ndvi)
         >>> full_result = user_defined_func.apply_user_function(data_source=earth_engine, user_func=compute_ndvi) 
 
@@ -624,17 +624,17 @@ class UserDefinedFunction:
         You can pass in additional positional or keyword arguments like the following:
 
         Example passing in an additional positional argument:
-        >>> from robustraster import udf_tuner
+        >>> from robustraster import udf_manager
 
-        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func = udf_manager.UserDefinedFunction()
         >>> user_defined_func.apply_user_function(earth_engine, compute_ndvi, max_iteration=10, 666)
 
         666 in this example will get passed into `compute_ndvi` as `numba`.
 
         Example passing in an additional keyword argument:
-        >>> from robustraster import udf_tuner
+        >>> from robustraster import udf_manager
 
-        >>> user_defined_func = udf_tuner.UserDefinedFunction()
+        >>> user_defined_func = udf_manager.UserDefinedFunction()
         >>> user_defined_func.tune_user_function(earth_engine, compute_ndvi, max_iteration=10, numba=666)
         """
         if not callable(user_func):

@@ -52,7 +52,7 @@ class RasterDataset(DataReaderInterface):
         A property meant to retrieve the xarray Dataset stored in _xarray_data.
 
         Example:
-        >>> local_raster = input_driver.RasterDataset('./raster.tif')
+        >>> local_raster = dataset_manager.RasterDataset('./raster.tif')
         >>> dataset = local_raster.dataset
         >>> print(dataset)
         """
@@ -158,7 +158,7 @@ class EarthEngineDataset(DataReaderInterface):
 
     Example usage for integrating Earth Engine with a custom cloud masking algorithm:
     1. Import required libraries and modules: 
-    >>> from robustraster import input_driver
+    >>> from robustraster import dataset_manager
     >>> import ee
     >>> import json
 
@@ -202,7 +202,7 @@ class EarthEngineDataset(DataReaderInterface):
     >>> }
 
     5. Create the EarthEngineDataset object:
-    >>> earth_engine = input_driver.EarthEngineDataset(parameters=test_parameters)
+    >>> earth_engine = dataset_manager.EarthEngineDataset(parameters=test_parameters)
 
     6. Print the contents of the data:
     >>> print(earth_engine.dataset)
@@ -242,7 +242,7 @@ class EarthEngineDataset(DataReaderInterface):
         
         Example usage for integrating Earth Engine with a custom cloud masking algorithm:
         1. Import required libraries and modules: 
-        >>> from robustraster import input_driver
+        >>> from robustraster import dataset_manager
         >>> import ee
         >>> import json
 
@@ -286,7 +286,7 @@ class EarthEngineDataset(DataReaderInterface):
         >>> }
 
         5. Create the EarthEngineDataset object:
-        >>> earth_engine = input_driver.EarthEngineDataset(parameters=test_parameters)
+        >>> earth_engine = dataset_manager.EarthEngineDataset(parameters=test_parameters)
 
         6. Print the contents of the data:
         >>> print(earth_engine.dataset)
@@ -304,7 +304,7 @@ class EarthEngineDataset(DataReaderInterface):
         A property meant to retrieve the xarray Dataset stored in _xarray_data.
 
         Example:
-        >>> earth_engine = input_driver.EarthEngineDataset(parameters)
+        >>> earth_engine = dataset_manager.EarthEngineDataset(parameters)
         >>> dataset = earth_engine.dataset
         >>> print(dataset)
         """
@@ -421,7 +421,7 @@ class EarthEngineDataset(DataReaderInterface):
             ee_collection = ee.ImageCollection(collection)
 
             # Optional filters
-            if start_date:
+            if start_date and end_date:
                 ee_collection = ee_collection.filterDate(start_date, end_date)
             if geometry:
                 ee_collection = ee_collection.filterBounds(geometry)
