@@ -5,6 +5,7 @@ import rasterio
 import rioxarray
 import ee
 import numpy as np
+import pandas as pd
 
 class DataReaderInterface(ABC):
     @abstractmethod
@@ -338,6 +339,12 @@ class EarthEngineDataset(DataReaderInterface):
         return self._xarray_data
     
     @property
+    def dataframe(self) -> pd.DataFrame:
+        # Convert Xarray to a Pandas DataFrame (Defaults to long format)
+        df = self._xarray_data.to_dataframe().head(5).reset_index()
+        return df
+    
+    @property
     def get_max_chunks_limit(self) -> dict:
         """
         A property not intended for user use. This is called if the user wants to use
@@ -346,6 +353,14 @@ class EarthEngineDataset(DataReaderInterface):
         """
         return self._max_chunks_limit
     
+    def __str__(self):
+        df_preview = self.dataset.to_dataframe().reset_index().head(10)  # Show first 10 rows
+        return df_preview.to_string()
+    
+    def __repr__(self):
+        return f"EarthEngineDataset(dataset with shape {self.dataset.dims})" 
+    
+
     def _get_data_type_in_bytes(self):
         """
         A private method not intended for user use. Using an xarray Dataset object derived from Google Earth Engine, 
