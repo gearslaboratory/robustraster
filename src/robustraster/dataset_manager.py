@@ -352,14 +352,6 @@ class EarthEngineDataset(DataReaderInterface):
         how to use this function (unless they choose to set a chunk size themselves).
         """
         return self._max_chunks_limit
-    
-    def __str__(self):
-        df_preview = self.dataset.to_dataframe().reset_index().head(10)  # Show first 10 rows
-        return df_preview.to_string()
-    
-    def __repr__(self):
-        return f"EarthEngineDataset(dataset with shape {self.dataset.dims})" 
-    
 
     def _get_data_type_in_bytes(self):
         """
