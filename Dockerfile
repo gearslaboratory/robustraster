@@ -19,4 +19,4 @@ WORKDIR /app
 # Install the Python package as an editable package
 #RUN pip install --no-cache-dir -e /app
 
-RUN pip install robustraster
+RUN pip install robustraster==0.1.3
