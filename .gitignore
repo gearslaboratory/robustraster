@@ -33,3 +33,4 @@ src/robustraster/__pycache__/performance_metric_helper.cpython-310.pyc
 src/robustraster/__pycache__/udf_manager.cpython-310.pyc
 ndvi_local.tif
 ndvi.tif
+optimal_chunks_20250213_100105.json

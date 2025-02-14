@@ -486,8 +486,15 @@ class EarthEngineDataset(DataReaderInterface):
         geometry = parameters.get('geometry', None)
         crs = parameters.get('crs', None)
 
-        
+        # Extract the sizes of each dimension dynamically
+        #dims_sizes = {dim: size for dim, size in ds.sizes.items()}
+
+        # Example chunk sizes - in this case, chunk size for each dimension is set to its full size
+        # You can modify the chunking size as needed for each dimension
+        #chunking = {dim: size for dim, size in dims_sizes.items()}
+
         # Fetch data from Earth Engine
+        @
         xarray_data = xr.open_dataset(
             ee_collection, 
             engine='ee', 

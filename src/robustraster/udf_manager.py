@@ -553,7 +553,7 @@ class UserDefinedFunction:
         ds_chunked = self._create_tuning_chunk(ds)
         ds_slice = self._get_starting_slice(ds_chunked)
         
-        return self._get_tuned_xarray(ds_chunked, ds_slice, user_func, *args, **kwargs)
+        return self._get_tuned_xarray(ds, ds_slice, user_func, *args, **kwargs)
         
     def apply_user_function(self, data_source: RasterDataset | EarthEngineDataset, 
                             user_func: str, chunks: Optional[dict | str] = None, *args, **kwargs):
