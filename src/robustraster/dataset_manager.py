@@ -494,7 +494,7 @@ class EarthEngineDataset(DataReaderInterface):
         #chunking = {dim: size for dim, size in dims_sizes.items()}
 
         # Fetch data from Earth Engine
-        @
+        
         xarray_data = xr.open_dataset(
             ee_collection, 
             engine='ee', 
