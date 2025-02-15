@@ -5,7 +5,6 @@ import pytest
 import ee
 import xarray as xr
 from robustraster.dataset_manager import RasterDataset, EarthEngineDataset
-from robustraster.earth_engine_auth import initialize_earth_engine
 
 
 @pytest.fixture
@@ -46,7 +45,11 @@ def test_read_data_invalid_file(temp_invalid_file):
 
 @pytest.fixture
 def setup_earth_engine():
-    initialize_earth_engine(json_key=None)
+    credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if credentials_path:
+        ee.Initialize(ee.ServiceAccountCredentials(None, credentials_path))
+    else:
+        ee.Initialize()  # Falls back to default authentication (local)
 
 def test_construct_ee_collection_no_collection(setup_earth_engine):
     """Test if no ImageCollection is passed."""
