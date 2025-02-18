@@ -39,3 +39,12 @@ jobs:
 
       - name: Run tests
         run: pytest tests/
+        
+      - name: Debug Secrets
+        run: |
+          if [ -z "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}" ]; then
+            echo "SECRET IS EMPTY!"
+          else
+            echo "SECRET IS SET!"
+          fi
+      
