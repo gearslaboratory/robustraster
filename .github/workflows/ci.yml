@@ -27,7 +27,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
-
+          - name: Run tests
+          run: pytest tests/
+          
+      - name: Debug Secrets
+        run: |
+            if [ -z "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}" ]; then
+              echo "SECRET IS EMPTY!"
+            else
+              echo "SECRET IS SET!"
+            fi
       # **Set up Google Cloud authentication**
       - name: Authenticate Google Cloud
         env:
@@ -36,15 +45,4 @@ jobs:
           echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}' > $GOOGLE_APPLICATION_CREDENTIALS
           gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS
           gcloud config set project robust-raster  # Replace with your Google Cloud Project ID
-
-      - name: Run tests
-        run: pytest tests/
-        
-      - name: Debug Secrets
-        run: |
-          if [ -z "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}" ]; then
-            echo "SECRET IS EMPTY!"
-          else
-            echo "SECRET IS SET!"
-          fi
       
