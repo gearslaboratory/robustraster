@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from .earth_engine_auth import initialize_earth_engine
 import xarray as xr
 import rasterio
 import rioxarray
