@@ -46,10 +46,12 @@ def test_read_data_invalid_file(temp_invalid_file):
 @pytest.fixture
 def setup_earth_engine():
     credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    if credentials_path:
-        ee.Initialize(ee.ServiceAccountCredentials(None, credentials_path))
+    print(f"CREDENTIALS PATH: {credentials_path}")
+    if credentials_path and os.path.exists(credentials_path):
+        ee.Initialize(ee.ServiceAccountCredentials(None, credentials_path),
+                      opt_url='https://earthengine-highvolume.googleapis.com')
     else:
-        ee.Initialize()  # Falls back to default authentication (local)
+        raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set correctly!")
 
 def test_construct_ee_collection_no_collection(setup_earth_engine):
     """Test if no ImageCollection is passed."""
