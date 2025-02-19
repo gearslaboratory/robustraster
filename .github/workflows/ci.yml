@@ -28,27 +28,34 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
-      # Debugging step to check if the secret is available
+      # **Check if Secret is Set**
       - name: Debug Secrets
         run: |
           if [ -z "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}" ]; then
-            echo "SECRET IS EMPTY!"
+            echo "❌ SECRET IS EMPTY!"
+            exit 1
           else
-            echo "SECRET IS SET!"
+            echo "✅ SECRET IS SET!"
           fi
-      - name: Validate Secret JSON
-        run: |
-          echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}' | jq empty && echo "JSON is valid!" || echo "Invalid JSON!"
 
       # **Set up Google Cloud authentication**
       - name: Authenticate Google Cloud
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcloud-key.json
         run: |
-          echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}' > $GOOGLE_APPLICATION_CREDENTIALS
-          export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS  # Ensure it's set for subprocesses
-          gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS
-          gcloud config set project robust-raster  # Replace with your actual Google Cloud Project ID
+          echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}' > $HOME/gcloud-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcloud-key.json" >> $GITHUB_ENV
+          gcloud auth activate-service-account --key-file=$HOME/gcloud-key.json
+          gcloud config set project robust-raster  # Replace with your Google Cloud Project ID
 
+      # **Verify that GOOGLE_APPLICATION_CREDENTIALS is set correctly**
+      - name: Verify Environment Variable
+        run: |
+          if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            echo "❌ GOOGLE_APPLICATION_CREDENTIALS is not set!"
+            exit 1
+          else
+            echo "✅ GOOGLE_APPLICATION_CREDENTIALS is set: $GOOGLE_APPLICATION_CREDENTIALS"
+          fi
+
+      # **Run Tests**
       - name: Run tests
         run: pytest tests/
