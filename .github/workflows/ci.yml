@@ -36,6 +36,9 @@ jobs:
           else
             echo "SECRET IS SET!"
           fi
+      - name: Validate Secret JSON
+        run: |
+          echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}' | jq empty && echo "JSON is valid!" || echo "Invalid JSON!"
 
       # **Set up Google Cloud authentication**
       - name: Authenticate Google Cloud
