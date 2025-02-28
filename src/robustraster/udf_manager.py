@@ -4,6 +4,9 @@ import pandas as pd
 from typing import Optional, Callable
 from datetime import datetime
 import json
+import os
+import glob
+from osgeo import gdal
 from .dataset_manager import RasterDataset, EarthEngineDataset
 from . import performance_metric_helper as pmh
 
@@ -342,7 +345,7 @@ class UserDefinedFunction:
                                             dtype=processed_chunk[var].dtype))
             else:
                 # For new variables, define the shape and chunks manually based on the original chunking strategy
-                new_var_shape = tuple(ds.dims[dim] for dim in processed_chunk[var].dims)
+                new_var_shape = tuple(ds.sizes[dim] for dim in processed_chunk[var].dims)
                 new_var_chunks = tuple(ds.chunks[dim][0] for dim in processed_chunk[var].dims)
                 template_vars[var] = (processed_chunk[var].dims, 
                                     da.empty(new_var_shape, 
@@ -556,7 +559,7 @@ class UserDefinedFunction:
         return self._get_tuned_xarray(ds, ds_slice, user_func, *args, **kwargs)
         
     def apply_user_function(self, data_source: RasterDataset | EarthEngineDataset, 
-                            user_func: str, chunks: Optional[dict | str] = None, *args, **kwargs):
+                            user_func: Callable[[], pd.DataFrame], chunks: Optional[dict | str] = None, *args, **kwargs):
         """
         Apply the user's custom function on the dataset. If the user ran `tune_user_function`
         prior, the user can use the same UserDefinedFunction object to run `apply_user_function`
@@ -658,3 +661,93 @@ class UserDefinedFunction:
         result.compute()
         
         return result
+    
+    def export_and_apply_user_function(self, data_source: RasterDataset | EarthEngineDataset, 
+                            user_func: Callable[[], pd.DataFrame], chunks: Optional[dict | str] = None, *args, **kwargs):
+        if not callable(user_func):
+            raise ValueError("The provided function must be callable.")
+
+        ds = data_source.dataset
+        ds = self._create_apply_chunk(ds, chunks)
+        print(ds)
+        template_xarray = self._generate_template_xarray(ds, user_func)
+        
+        result = xr.map_blocks(self._user_function_wrapper, 
+                        ds, 
+                        args=(user_func,),
+                        template=template_xarray)
+        
+        output_dir = "tiles"
+        os.makedirs(output_dir, exist_ok=True)
+
+        crs = ds.attrs.get('crs', None)
+        # Rename and transpose dimensions for compatibility
+        ds_renamed = result.rename({'X': 'x', 'Y': 'y'})
+        ds_transposed = ds_renamed.transpose('time', 'y', 'x').rio.write_crs(crs)
+        ds_transposed = ds_transposed.sortby("y", ascending=False)
+
+        # Get the first dimension name dynamically
+        first_dim_name = list(ds_transposed.dims)[0]
+
+        # Iterate over spatial chunks
+        for time_index in ds_transposed[first_dim_name].values:
+            ds_time_slice = ds_transposed.sel({first_dim_name: time_index})  # Get the current time step
+
+            # Convert time index to string for filenames
+            time_str = str(time_index).replace(":", "_").replace("-", "_").replace(" ", "_")
+
+            # Dynamically get the chunk sizes for x and y
+            chunk_size_x = ds_time_slice.chunks["x"][0]  # X chunk size
+            chunk_size_y = ds_time_slice.chunks["y"][0]  # Y chunk size
+
+            # Iterate over chunks of the dataset
+            for chunk_index, chunk in enumerate(ds_time_slice.chunk({"x": chunk_size_x, "y": chunk_size_y}).data_vars.items()):
+                var_name, chunk_data = chunk
+
+                # Convert the chunk into an xarray.Dataset for exporting
+                chunk_dataset = ds_time_slice.isel(
+                    x=slice(chunk_data.chunks[1][0]),  # Adjust X slice based on chunk size
+                    y=slice(chunk_data.chunks[0][0])   # Adjust Y slice based on chunk size
+                )
+
+                # Convert to multi-band DataArray
+                stacked = chunk_dataset.to_array(dim="band")
+
+                # Assign band names
+                stacked = stacked.assign_coords(band=list(chunk_dataset.data_vars))
+
+                # Ensure CRS is set
+                if "spatial_ref" not in stacked.coords:
+                    print("CRS IS NOT SET! SET IT IN YOUR EARTH ENGINE CODE!")
+                    #stacked = stacked.rio.write_crs("EPSG:3310")
+
+                # Define output path with chunk information
+                output_path = os.path.join(output_dir, f"chunk_{chunk_index}_time_{time_str}.tif")
+
+                # Export chunk as a multi-band GeoTIFF
+                stacked.rio.to_raster(output_path, driver="GTiff")
+
+                print(f"Exported: {output_path} with bands {list(chunk_dataset.data_vars)}")
+        
+        # MAKE THIS PORTION BELOW A SEPARATE FUNCTION!!!! #
+        output_dir = "tiles"
+        output_vrt = os.path.join(output_dir, "output.vrt")
+
+        #######################################
+        ### GENERATE THE VRT FROM THE TILES ###
+        #######################################
+        # Get a list of all .tif files in the folder
+        tif_files = glob.glob(os.path.join(output_dir, "*.tif"))
+
+        if not tif_files:
+            print("No GeoTIFF files found in the specified folder.")
+            
+        # Use GDAL's BuildVRT function to create a virtual raster
+        vrt_dataset = gdal.BuildVRT(output_vrt, tif_files)
+
+        if vrt_dataset:
+            vrt_dataset.FlushCache()  # Save changes to disk
+            vrt_dataset = None  # Close the dataset
+            print(f"VRT file created successfully: {output_vrt}")
+        else:
+            print("Failed to create VRT file.")

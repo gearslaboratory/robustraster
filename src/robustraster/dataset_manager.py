@@ -499,8 +499,8 @@ class EarthEngineDataset(DataReaderInterface):
             engine='ee', 
             crs=crs, 
             scale=scale,
-            geometry=geometry,
-            chunks='auto')
+            geometry=geometry)#,
+            #chunks='auto')
         
         #xarray_data = xarray_data.sortby('time')
         return xarray_data
