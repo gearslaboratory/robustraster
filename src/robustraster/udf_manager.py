@@ -661,7 +661,31 @@ class UserDefinedFunction:
         result.compute()
         
         return result
-    
+
+    def _export_dataset_to_raster(self, output_dir: str):
+        # MAKE THIS PORTION BELOW A SEPARATE FUNCTION!!!! #
+        output_dir = "tiles"
+        output_vrt = os.path.join(output_dir, "output.vrt")
+
+        #######################################
+        ### GENERATE THE VRT FROM THE TILES ###
+        #######################################
+        # Get a list of all .tif files in the folder
+        tif_files = glob.glob(os.path.join(output_dir, "*.tif"))
+
+        if not tif_files:
+            print("No GeoTIFF files found in the specified folder.")
+            
+        # Use GDAL's BuildVRT function to create a virtual raster
+        vrt_dataset = gdal.BuildVRT(output_vrt, tif_files)
+
+        if vrt_dataset:
+            vrt_dataset.FlushCache()  # Save changes to disk
+            vrt_dataset = None  # Close the dataset
+            print(f"VRT file created successfully: {output_vrt}")
+        else:
+            print("Failed to create VRT file.")
+
     def export_and_apply_user_function(self, data_source: RasterDataset | EarthEngineDataset, 
                             user_func: Callable[[], pd.DataFrame], chunks: Optional[dict | str] = None, *args, **kwargs):
         if not callable(user_func):
@@ -669,7 +693,7 @@ class UserDefinedFunction:
 
         ds = data_source.dataset
         ds = self._create_apply_chunk(ds, chunks)
-        print(ds)
+
         template_xarray = self._generate_template_xarray(ds, user_func)
         
         result = xr.map_blocks(self._user_function_wrapper, 
@@ -725,29 +749,9 @@ class UserDefinedFunction:
                 output_path = os.path.join(output_dir, f"chunk_{chunk_index}_time_{time_str}.tif")
 
                 # Export chunk as a multi-band GeoTIFF
+                # This will also run the Dask compute() method!!
                 stacked.rio.to_raster(output_path, driver="GTiff")
 
                 print(f"Exported: {output_path} with bands {list(chunk_dataset.data_vars)}")
-        
-        # MAKE THIS PORTION BELOW A SEPARATE FUNCTION!!!! #
-        output_dir = "tiles"
-        output_vrt = os.path.join(output_dir, "output.vrt")
 
-        #######################################
-        ### GENERATE THE VRT FROM THE TILES ###
-        #######################################
-        # Get a list of all .tif files in the folder
-        tif_files = glob.glob(os.path.join(output_dir, "*.tif"))
-
-        if not tif_files:
-            print("No GeoTIFF files found in the specified folder.")
-            
-        # Use GDAL's BuildVRT function to create a virtual raster
-        vrt_dataset = gdal.BuildVRT(output_vrt, tif_files)
-
-        if vrt_dataset:
-            vrt_dataset.FlushCache()  # Save changes to disk
-            vrt_dataset = None  # Close the dataset
-            print(f"VRT file created successfully: {output_vrt}")
-        else:
-            print("Failed to create VRT file.")
+        self._export_dataset_to_raster(output_dir)
