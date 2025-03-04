@@ -36,3 +36,5 @@ ndvi.tif
 optimal_chunks_20250213_100105.json
 experiment_code/TEST_EXPORT_DATASET.nc
 output.nc
+sample_data/TEST_EXPORT_DATASET.nc
+experiment_code/sample_data/TEST_EXPORT_DATASET.nc

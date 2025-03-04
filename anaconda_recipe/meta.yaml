@@ -1,0 +1,41 @@
+package:
+  name: robustraster
+  version: "0.2.0"
+
+source:
+  path: ../src  # Path to your package source code
+
+build:
+  noarch: python  # This means the package is Python-only and works across platforms
+
+requirements:
+  build:
+    - python==3.10.16
+    - numpy==2.0.1
+    - setuptools
+  run:
+    - python==3.10.16
+    - xee==0.0.13
+    - rioxarray==0.15.0
+    - dask==2024.8.1
+    - distributed==2024.8.1
+    - cloudpickle==3.0.0
+    - lz4==4.3.3
+    - numpy==2.0.1
+    - pandas==2.2.2
+    - tornado==6.4.1
+    - earthengine-api==0.1.417 
+    - docker-py==7.1.0
+    - netCDF4==1.7.1
+    - beautifulsoup4==4.12.3 
+    - lxml==5.3.0 
+    - soupsieve==2.5
+    - gdal==3.10.2
+
+test:
+  requires:
+    - pytest  # Added pytest dependency
+  imports:
+    - robustraster
+  commands:
+    - pytest

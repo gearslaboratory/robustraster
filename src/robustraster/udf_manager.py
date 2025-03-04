@@ -755,3 +755,4 @@ class UserDefinedFunction:
                 print(f"Exported: {output_path} with bands {list(chunk_dataset.data_vars)}")
 
         self._export_dataset_to_raster(output_dir)
+        return result
