@@ -1,0 +1,19 @@
+1.  Install conda-build
+# I did this in the base environment
+
+$ conda install conda-build
+
+2. Make sure you have a meta.yaml file. This will act as your build recipe (similar to a Dockerfile)
+# You can also have a conda_build_config.yaml that can provide exceptions in your build
+
+2.5 Add a setup.py file in your /src/robustraster folder
+
+3. Build the package
+$ conda-build /path_to_recipe
+
+4. Upload the package!
+$ anaconda login
+$ anaconda upload C:\anaconda3\conda-bld\win-64\robustraster-0.2.0-py310_1.conda
+
+Built packages will typically be stored in /anaconda3/conda-bld. If you built the package
+in an environment, it will be stored in /anaconda/envs/robustraster/conda-bld

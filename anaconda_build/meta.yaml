@@ -1,0 +1,48 @@
+package:
+  name: robustraster
+  version: "0.2.0"
+
+source:
+  path: ../src  # Path to your package source code
+
+build:
+  noarch: python
+  script: python -m pip install . # This means the package is Python-only and works across platforms
+
+requirements:
+  build:
+    - python==3.10.16
+    - numpy==2.0.1
+  run:
+    - python==3.10.16
+    - numpy==2.0.1
+    - xee=0.0.13
+    - rioxarray=0.15.0
+    - dask=2024.8.1
+    - distributed=2024.8.1
+    - cloudpickle=3.0.0
+    - lz4=4.3.3
+    - msgpack-python=1.0.8
+    - pandas=2.2.2
+    - tornado=6.4.2
+    - GDAL=3.10.2
+
+about:
+  summary: "A custom Anaconda package including Conda and Pip dependencies"
+  license: "MIT"
+
+test:
+  imports:
+    - robustraster
+build:
+  number: 1 
+#extra:
+#  recipe-maintainers:
+#    - adrianom
+#test:
+#  requires:
+#    - pytest  # Added pytest dependency
+#  imports:
+#    - robustraster
+#  commands:
+#    - pytest

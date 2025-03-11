@@ -1,7 +1,7 @@
 import re
 import csv
 import os
-import docker
+#import docker
 from functools import reduce
 import operator
 import psutil
@@ -109,11 +109,13 @@ def get_wall_time_and_memory():
 
     return compute_time_seconds, max_memory_gb
 
+"""
 def get_dask_workers_count():
     client = docker.from_env()  # Initialize Docker client
     containers = client.containers.list()  # Get list of running containers
     dask_worker_containers = [container for container in containers if 'dask-worker' in container.name]
-    return len(dask_worker_containers)
+    return len(dask_worker_containers)"
+"""
 
 def get_available_system_memory():
     # Get total available RAM in bytes
