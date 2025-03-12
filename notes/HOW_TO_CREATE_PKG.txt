@@ -2,11 +2,13 @@
 pip install setuptools wheel twine
 
 # Build the source and wheel distributions
-python setup.py sdist bdist_wheel
+$ python setup.py sdist bdist_wheel
+
+# The above step will work, but is deprecated. Use the bottom instead!
+$ python -m build
 
 # Upload to PyPi (could also upload to TestPyPi, but some dependencies don't work on there...)
 twine upload dist/*
 
 # Install the package
 pip install robustraster
-

@@ -8,8 +8,8 @@ def parse_requirements(filename):
 
 setup(
     name="robustraster",
-    version="0.1.3",
-    python_requires=">=3.10.12,<3.11",
+    version="0.2.0",
+    python_requires=">=3.10.16,<3.11",
     author="Adriano Matos",
     author_email="adrianom@unr.edu",
     description="Running user-defined functions on large datasets via out-of-core computation simplfied.",
@@ -22,6 +22,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    install_requires=parse_requirements('requirements-lock.txt'),  # Use the lock file
+    install_requires=parse_requirements(r'C:\Users\Adriano Matos\Documents\Python Scripts\big-raster-helper\requirements-lock.txt'),  # Use the lock file
     include_package_data=True,
 )
