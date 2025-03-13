@@ -12,6 +12,9 @@ from . import performance_metric_helper as pmh
 
 from dask.distributed import performance_report
 
+from rasterio.io import MemoryFile
+import gcsfs
+
 class UserDefinedFunction:
     '''
     A class meant to allow users to apply their own custom functions on a dataset derived
@@ -756,3 +759,90 @@ class UserDefinedFunction:
 
         self._export_dataset_to_raster(output_dir)
         return result
+    
+    def export_and_apply_user_function_cloud(self, data_source, 
+                                    user_func: Callable[[], pd.DataFrame], 
+                                    chunks: Optional[dict | str] = None, 
+                                    gcs_bucket: str = "test-xarrgcs-bucket",
+                                    gcs_folder: str = "tiles",
+                                    *args, **kwargs):
+
+        if not callable(user_func):
+            raise ValueError("The provided function must be callable.")
+
+        # Initialize Google Cloud Storage file system
+        fs = gcsfs.GCSFileSystem()
+
+        ds = data_source.dataset
+        ds = self._create_apply_chunk(ds, chunks)
+
+        template_xarray = self._generate_template_xarray(ds, user_func)
+
+        result = xr.map_blocks(self._user_function_wrapper, 
+                            ds, 
+                            args=(user_func,),
+                            template=template_xarray)
+
+        crs = ds.attrs.get('crs', None)
+
+        # Rename and transpose dimensions for compatibility
+        ds_renamed = result.rename({'X': 'x', 'Y': 'y'})
+        ds_transposed = ds_renamed.transpose('time', 'y', 'x').rio.write_crs(crs)
+        ds_transposed = ds_transposed.sortby("y", ascending=False)
+
+        # Get the first dimension name dynamically
+        first_dim_name = list(ds_transposed.dims)[0]
+
+        # Iterate over spatial chunks
+        for time_index in ds_transposed[first_dim_name].values:
+            ds_time_slice = ds_transposed.sel({first_dim_name: time_index})  # Get the current time step
+
+            # Convert time index to string for filenames
+            time_str = str(time_index).replace(":", "_").replace("-", "_").replace(" ", "_")
+
+            # Dynamically get the chunk sizes for x and y
+            chunk_size_x = ds_time_slice.chunks["x"][0]  # X chunk size
+            chunk_size_y = ds_time_slice.chunks["y"][0]  # Y chunk size
+
+            # Iterate over chunks of the dataset
+            for chunk_index, chunk in enumerate(ds_time_slice.chunk({"x": chunk_size_x, "y": chunk_size_y}).data_vars.items()):
+                var_name, chunk_data = chunk
+
+                # Convert the chunk into an xarray.Dataset for exporting
+                chunk_dataset = ds_time_slice.isel(
+                    x=slice(chunk_data.chunks[1][0]),  # Adjust X slice based on chunk size
+                    y=slice(chunk_data.chunks[0][0])   # Adjust Y slice based on chunk size
+                )
+
+                # Convert to multi-band DataArray
+                stacked = chunk_dataset.to_array(dim="band")
+
+                # Assign band names
+                stacked = stacked.assign_coords(band=list(chunk_dataset.data_vars))
+
+                # Ensure CRS is set
+                if "spatial_ref" not in stacked.coords:
+                    print("CRS IS NOT SET! SET IT IN YOUR EARTH ENGINE CODE!")
+                    #stacked = stacked.rio.write_crs("EPSG:3310")
+
+                # Define GCS output path
+                gcs_path = f"gcs://{gcs_bucket}/chunk_{chunk_index}_time_{time_str}.tif"
+
+                # Use MemoryFile to store the raster in RAM before uploading
+                with MemoryFile() as memfile:
+                    with memfile.open(
+                        driver="COG",
+                        width=stacked.rio.width,
+                        height=stacked.rio.height,
+                        count=len(stacked.band),  # Number of bands
+                        dtype=stacked.dtype,
+                        crs=stacked.rio.crs,
+                        transform=stacked.rio.transform(),
+                    ) as dataset:
+                        dataset.write(stacked.values)  # Write data
+
+                    # Upload to GCS
+                    with fs.open(gcs_path, "wb") as f:
+                        f.write(memfile.read())
+
+                print(f"Exported to GCS: {gcs_path} with bands {list(chunk_dataset.data_vars)}")

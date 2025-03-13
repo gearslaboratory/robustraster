@@ -1,0 +1,22 @@
+import dask
+
+@dask.delayed
+def dataframe_conversion(ds):
+    return ds.to_dataframe().reset_index()
+
+@dask.delayed
+def compute_ndvi(df):
+    df["ndvi"] = (df["SR_B5"] - df["SR_B4"]) / (df["SR_B5"] + df["SR_B4"])
+    return df
+
+@dask.delayed
+def dataframe_to_xarray(df, dims):
+    df = df.set_index(dims)
+    return df.to_xarray()
+
+delayed_df = dataframe_conversion(xarray_data)
+delayed_ndvi = compute_ndvi(delayed_df)
+delayed_xr = dataframe_to_xarray(delayed_ndvi, list(xarray_data.dims))
+
+# Compute everything at once
+result = delayed_xr.compute()
