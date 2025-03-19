@@ -256,7 +256,7 @@ class ExportProcessor:
         ds = data_source.dataset
         chunks = kwargs.get('chunks', None)
         ds = self.user_function_handler._create_apply_chunk(ds, chunks)
-
+        
         template_xarray = self.user_function_handler._generate_template_xarray(ds)
 
         result = xr.map_blocks(self.user_function_handler._user_function_wrapper, 

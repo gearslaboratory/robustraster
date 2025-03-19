@@ -108,13 +108,18 @@ class DaskClusterManager:
          # Determine default settings based on mode
         if mode == "full":
             # Use kwargs values if provided, otherwise use default values
-            n_workers = kwargs.get('n_workers', num_cores)
-            threads_per_worker = kwargs.get('threads_per_worker', 1)
-            memory_limit = kwargs.get('memory_limit', f"{total_memory_gb / num_cores}GB")
+            n_workers = num_cores
+            threads_per_worker = 1
+            memory_limit = f"{total_memory_gb / num_cores}GB"
         elif mode == "test":
             n_workers = 1
             threads_per_worker = 1
             memory_limit = f"{int(total_memory_gb)}GB"
+        elif mode == "custom":
+            # Use kwargs values if provided, otherwise use default values
+            n_workers = kwargs.get('n_workers', num_cores)
+            threads_per_worker = kwargs.get('threads_per_worker', 1)
+            memory_limit = kwargs.get('memory_limit', f"{total_memory_gb / num_cores}GB")
         else:
             raise ValueError("Invalid mode. Choose either 'full' or 'test'.")
 
