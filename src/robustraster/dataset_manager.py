@@ -5,6 +5,8 @@ import rioxarray
 import ee
 import numpy as np
 import pandas as pd
+import geopandas as gpd
+import json
 
 class DataReaderInterface(ABC):
     @abstractmethod
@@ -427,7 +429,19 @@ class EarthEngineDataset(DataReaderInterface):
     
         return {f'{first_dim_name}': index, 'X': width, 'Y': height}
 
-
+    def _vector_to_fc(self, vector: str | ee.FeatureCollection):
+        if isinstance(vector, ee.featurecollection.FeatureCollection):
+            print("FEATURECOLLECTION!")
+            return vector
+        else:
+            # Read local vector file (supports .shp, .geojson, .kml, etc.)
+            gdf = gpd.read_file(vector)  # or .geojson, etc.
+            # Convert to GeoJSON dict (not string)
+            geojson_dict = json.loads(gdf.to_json())
+            # Create an ee.FeatureCollection
+            fc = ee.FeatureCollection(geojson_dict)
+            return fc
+    
     def _construct_ee_collection(self, parameters: dict) -> ee.ImageCollection:
         """
         A private method not intended for user use. Construct an Earth Engine image collection 
@@ -444,7 +458,7 @@ class EarthEngineDataset(DataReaderInterface):
         bands = parameters.get('bands', None)
         start_date = parameters.get('start_date', None)
         end_date = parameters.get('end_date', None)
-        geometry = parameters.get('geometry', None)
+        #vector_path = parameters.get('vector_path', None)
         map_function = parameters.get('map_function', None)
 
         if collection is None:
@@ -456,8 +470,9 @@ class EarthEngineDataset(DataReaderInterface):
             # Optional filters
             if start_date and end_date:
                 ee_collection = ee_collection.filterDate(start_date, end_date)
-            if geometry:
-                ee_collection = ee_collection.filterBounds(geometry)
+            #if vector_path:
+            #    fc = self._vector_to_fc(vector_path)
+            #    ee_collection = ee_collection.filterBounds(fc.geometry())
             if map_function and callable(map_function):
                 ee_collection = ee_collection.map(map_function)
             if bands:
@@ -480,26 +495,21 @@ class EarthEngineDataset(DataReaderInterface):
         """
 
         # Construct Earth Engine image collection query based on parameters
-        ee_collection = self._construct_ee_collection(parameters)
         scale = parameters.get('scale', None)
-        geometry = parameters.get('geometry', None)
         crs = parameters.get('crs', None)
+        vector_path = parameters.get('vector_path', None)
+        fc = self._vector_to_fc(vector_path)
 
-        # Extract the sizes of each dimension dynamically
-        #dims_sizes = {dim: size for dim, size in ds.sizes.items()}
-
-        # Example chunk sizes - in this case, chunk size for each dimension is set to its full size
-        # You can modify the chunking size as needed for each dimension
-        #chunking = {dim: size for dim, size in dims_sizes.items()}
+        # Maybe make this a separate private function? #
+        ee_collection = self._construct_ee_collection(parameters).filterBounds(fc.geometry()).sort(("system:time_start"))
 
         # Fetch data from Earth Engine
-        ee_collection = ee_collection.sort("system:time_start")
         xarray_data = xr.open_dataset(
             ee_collection, 
             engine='ee', 
             crs=crs, 
             scale=scale,
-            geometry=geometry)#,
+            geometry=fc.geometry())#,
             #chunks='auto')
         
         #xarray_data = xarray_data.sortby('time')
