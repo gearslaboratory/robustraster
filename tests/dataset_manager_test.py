@@ -53,23 +53,31 @@ def setup_earth_engine():
     else:
         raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set correctly!")
 
+def _construct_test_fc_object(geometry):
+    feature = ee.Feature(geometry)
+    featureCollection = ee.FeatureCollection([feature])
+    
+    return featureCollection
+
 def test_construct_ee_collection_no_collection(setup_earth_engine):
     """Test if no ImageCollection is passed."""
+    featureCollection = _construct_test_fc_object(geometry=ee.Geometry.Point(-122.082, 37.42))
     parameters = {
         'start_date': '2021-01-01',
         'end_date': '2021-01-31',
-        'geometry': ee.Geometry.Point(-122.082, 37.42)
+        'vector_path': featureCollection
     }
     with pytest.raises(ee.EEException, match="Earth Engine collection was not provided."):
         EarthEngineDataset(parameters)
 
 def test_construct_ee_collection_invalid_collection_type(setup_earth_engine):
     """Test to ensure the ImageCollection string is a valid collection type."""
+    featureCollection = _construct_test_fc_object(geometry=ee.Geometry.Point(-122.082, 37.42))
     parameters = {
         'collection': 500,
         'start_date': '1992-10-05',
         'end_date': '1993-03-31',
-        'geometry': ee.Geometry.Point(-122.082, 37.42)
+        'vector_path': featureCollection
     }
     with pytest.raises(ee.EEException, match="Unrecognized argument type"):
         EarthEngineDataset(parameters)
@@ -79,11 +87,12 @@ def test_map_function_applied(setup_earth_engine):
     def map_function(image):
         return image.add(10)
     
+    featureCollection = _construct_test_fc_object(ee.Geometry.Rectangle([-122.5, 37.0, -121.5, 38.0]))
     parameters = {
         'collection': 'MODIS/061/MOD13A2',
         'start_date': '2023-01-01',
         'end_date': '2023-12-31',
-        'geometry': ee.Geometry.Rectangle([-122.5, 37.0, -121.5, 38.0]),
+        'vector_path': featureCollection,
         'map_function': map_function
     }
     reader = EarthEngineDataset(parameters)
@@ -93,11 +102,12 @@ def test_map_function_applied(setup_earth_engine):
 
 def test_read_data_earth_engine(setup_earth_engine):
     """Test reading Earth Engine data."""
+    featureCollection = _construct_test_fc_object(ee.Geometry.Rectangle(113.33, -43.63, 153.56, -10.66))
     parameters = {
         'collection': 'ECMWF/ERA5_LAND/HOURLY',
         'start_date': '1992-10-05',
         'end_date': '1993-03-31',
-        'geometry': ee.Geometry.Rectangle(113.33, -43.63, 153.56, -10.66),
+        'vector_path': featureCollection,
         'crs': 'EPSG:4326',
         'scale': 0.25
     }
