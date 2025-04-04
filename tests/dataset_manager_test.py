@@ -95,7 +95,8 @@ def test_map_function_applied(setup_earth_engine):
         'end_date': '2023-12-31',
         'vector_path': featureCollection,
         'map_function': map_function,
-        'crs': 'EPSG:4326'
+        'crs': 'EPSG:4326',
+        'scale': 1000
     }
     reader = EarthEngineDataset(parameters)
     ee_collection = reader._construct_ee_collection(parameters)
