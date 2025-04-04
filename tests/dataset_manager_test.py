@@ -90,7 +90,7 @@ def test_map_function_applied(setup_earth_engine):
     featureCollection = _construct_test_fc_object(ee.Geometry.Rectangle(-122.5, 37.0, -121.5, 38.0))
 
     parameters = {
-        'collection': 'ECMWF/ERA5_LAND/HOURLY',#'MODIS/061/MOD13A2',
+        'collection': 'MODIS/061/MOD13A2',
         'start_date': '2023-01-01',
         'end_date': '2023-12-31',
         'vector_path': featureCollection,
