@@ -89,7 +89,7 @@ def test_map_function_applied(setup_earth_engine):
     
     def reproject_geometry(geom, target_image):
         projection = target_image.projection()
-        return geom.transform(projection, 0)
+        return geom.transform(projection, 1)
 
     geometry = reproject_geometry(ee.Geometry.Rectangle(-122.5, 37.0, -121.5, 38.0), ee.ImageCollection('MODIS/061/MOD13A2').first())
     featureCollection = _construct_test_fc_object(geometry)
