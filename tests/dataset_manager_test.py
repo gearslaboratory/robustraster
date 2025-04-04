@@ -87,7 +87,8 @@ def test_map_function_applied(setup_earth_engine):
     def map_function(image):
         return image.add(10)
     
-    featureCollection = _construct_test_fc_object(ee.Geometry.Rectangle([-122.5, 37.0, -121.5, 38.0]))
+    #featureCollection = _construct_test_fc_object(ee.Geometry.Rectangle([-122.5, 37.0, -121.5, 38.0]))
+    featureCollection = _construct_test_fc_object(ee.Geometry.Rectangle(113.33, -43.63, 153.56, -10.66))
     parameters = {
         'collection': 'MODIS/061/MOD13A2',
         'start_date': '2023-01-01',
