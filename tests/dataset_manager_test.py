@@ -87,13 +87,16 @@ def test_map_function_applied(setup_earth_engine):
     def map_function(image):
         return image.add(10)
     
-    #featureCollection = _construct_test_fc_object(ee.Geometry.Rectangle([-122.5, 37.0, -121.5, 38.0]))
-    featureCollection = _construct_test_fc_object(ee.Geometry.Rectangle(113.33, -43.63, 153.56, -10.66))
+    featureCollection = _construct_test_fc_object(ee.Geometry.Rectangle([-122.5, 37.0, -121.5, 38.0]))
+    image = ee.ImageCollection('MODIS/061/MOD13A2').first()
+    projection = image.projection()
+    reprojected_fc = featureCollection.map(lambda f: f.setGeometry(f.geometry().transform(projection)))
+
     parameters = {
         'collection': 'MODIS/061/MOD13A2',
         'start_date': '2023-01-01',
         'end_date': '2023-12-31',
-        'vector_path': featureCollection,
+        'vector_path': reprojected_fc,
         'map_function': map_function
     }
     reader = EarthEngineDataset(parameters)
