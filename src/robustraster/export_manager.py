@@ -10,9 +10,11 @@ import gcsfs
 import os
 import glob
 import posixpath
+import dask
+from dask import delayed
 
 class ExportProcessor:
-    def __init__(self, user_function_handler=None):
+    def __init__(self, user_function_handler=None, **kwargs):
         """
         Initialize ExportProcessor.
         - If a UserFunctionHandler instance is provided, use it.
@@ -21,7 +23,8 @@ class ExportProcessor:
         :param user_function_handler: Optional existing UserFunctionHandler object.
         """
         self.user_function_handler = user_function_handler
-
+        self.kwargs = kwargs
+    
     def _generate_vrt(self, input_files: list, output_vrt: str):
         """Generate a VRT file from a list of GeoTIFF files."""
         if not input_files:
@@ -29,6 +32,7 @@ class ExportProcessor:
             return
         
         vrt_dataset = gdal.BuildVRT(output_vrt, input_files)
+        #vrt_dataset = gdal.BuildVRT(output_vrt, input_files)
 
         if vrt_dataset:
             vrt_dataset.FlushCache()  # Save changes
@@ -43,134 +47,49 @@ class ExportProcessor:
         tif_files = glob.glob(os.path.join(output_dir, "*.tif"))
         self._generate_vrt(tif_files, output_vrt)
 
-    def _format_dataset(self, result, ds):
-        """Format dataset by renaming, transposing, and ensuring CRS."""
+    def _format_dataset2(self, result, ds):
+        # Format dataset by renaming, transposing, and ensuring CRS.
         crs = ds.attrs.get('crs', None)
         ds_renamed = result.rename({'X': 'x', 'Y': 'y'})
         ds_transposed = ds_renamed.transpose('time', 'y', 'x').rio.write_crs(crs)
         return ds_transposed.sortby("y", ascending=False)
-    
-    def _compute_chunks_and_export(self, ds_transposed, **kwargs):
-        """Iterate over dataset chunks and export accordingly."""
-        flag = kwargs.get('flag', 'GTiff')
-        output_folder = kwargs.get('output_folder', 'tiles')
-        gcs_credentials = kwargs.get('gcs_credentials', None)
-        gcs_bucket = kwargs.get('gcs_bucket', 'buckets-of-fun')
-        gcs_folder = kwargs.get('gcs_folder', None)
+
+    def _get_block_time_str(self, ds_block):
+        first_dim = list(ds_block.dims)[0]
+        time_val = ds_block[first_dim].values
+        if hasattr(time_val, "__len__"):
+            time_val = time_val[0]
+        return self._format_time_string(time_val)
+
+    def _get_block_chunk_index(self, ds_block):
+        # Optional — derive a unique index from coordinate values
+        # This could be a hash or tuple of indices depending on your needs
+        return hash(tuple(ds_block.coords[dim].values[0] for dim in ds_block.dims))
+
+    def _compute_chunks_and_export(self, ds_transposed):
+        """Export a single block (already chunked by Dask) using the appropriate method."""
+
+        flag = self.kwargs.get('flag', 'GTiff')
+        #vrt_flag = self.kwargs.get('output_vrt', False)
+        output_folder = self.kwargs.get('output_folder', 'tiles')
+        gcs_credentials = self.kwargs.get('gcs_credentials', None)
+        gcs_bucket = self.kwargs.get('gcs_bucket', 'buckets-of-fun')
+        gcs_folder = self.kwargs.get('gcs_folder', None)
+
+        # Determine time string from block content
+        time_str = self._get_block_time_str(ds_transposed)
+
+        # Generate a chunk_index from block content if needed
+        chunk_index = self._get_block_chunk_index(ds_transposed)
+
+        stacked = self._convert_to_multiband(ds_transposed)
 
         if flag == "GTiff":
-            self._compute_chunks(
-                ds_transposed,
-                lambda stacked, chunk_index, time_str: self._export_to_geotiff(stacked, chunk_index, time_str, output_folder)
-            )
-            self._generate_vrt_from_tifs()
+            self._export_to_geotiff(stacked, chunk_index, time_str, output_folder)
+
         elif flag == "GCS":
             gcs_prefix = self._create_bucket_and_folder(gcs_credentials, gcs_bucket, gcs_folder)
-            self._compute_chunks(
-                ds_transposed,
-                lambda stacked, chunk_index, time_str: self._export_to_gcs(
-                    stacked, chunk_index, time_str, gcs_prefix, gcs_credentials
-                )
-            )
-
-    def _compute_chunks(self, ds_transposed, export_func):
-        first_dim_name = list(ds_transposed.dims)[0]
-
-        for time_index in ds_transposed[first_dim_name].values:
-            ds_time_slice = ds_transposed.sel({first_dim_name: time_index})
-            time_str = self._format_time_string(time_index)
-
-            chunk_size_x = ds_time_slice.chunks["x"][0]
-            chunk_size_y = ds_time_slice.chunks["y"][0]
-
-            for chunk_index, chunk in enumerate(ds_time_slice.chunk({"x": chunk_size_x, "y": chunk_size_y}).data_vars.items()):
-                var_name, chunk_data = chunk
-                chunk_dataset = ds_time_slice.isel(
-                    x=slice(chunk_data.chunks[1][0]),
-                    y=slice(chunk_data.chunks[0][0])
-                )
-
-                stacked = self._convert_to_multiband(chunk_dataset)
-                export_func(stacked, chunk_index, time_str)
-
-    def _compute_chunks_and_export_2(self, ds_transposed, **kwargs):
-        #Iterate over dataset chunks and export accordingly.
-        flag = kwargs.get('flag', 'GTiff')
-        output_folder = kwargs.get('output_folder', 'tiles')
-        gcs_credentials = kwargs.get('gcs_credentials', None)
-        gcs_bucket = kwargs.get('gcs_bucket', 'buckets-of-fun')
-        gcs_folder = kwargs.get('gcs_folder', None)
-
-        if flag == "GTiff":
-            first_dim_name = list(ds_transposed.dims)[0]
-
-            for time_index in ds_transposed[first_dim_name].values:
-                ds_time_slice = ds_transposed.sel({first_dim_name: time_index})
-                time_str = self._format_time_string(time_index)
-
-                chunk_size_x = ds_time_slice.chunks["x"][0]
-                chunk_size_y = ds_time_slice.chunks["y"][0]
-
-                for chunk_index, chunk in enumerate(ds_time_slice.chunk({"x": chunk_size_x, "y": chunk_size_y}).data_vars.items()):
-                    var_name, chunk_data = chunk
-                    chunk_dataset = ds_time_slice.isel(
-                        x=slice(chunk_data.chunks[1][0]),
-                        y=slice(chunk_data.chunks[0][0])
-                    )
-
-                    stacked = self._convert_to_multiband(chunk_dataset)
-                    self._export_to_geotiff(stacked, chunk_index, time_str, output_folder)
-            self._generate_vrt_from_tifs()     
-        elif flag == "GCS":
-            first_dim_name = list(ds_transposed.dims)[0]
-
-            for time_index in ds_transposed[first_dim_name].values:
-                ds_time_slice = ds_transposed.sel({first_dim_name: time_index})
-                time_str = self._format_time_string(time_index)
-
-                chunk_size_x = ds_time_slice.chunks["x"][0]
-                chunk_size_y = ds_time_slice.chunks["y"][0]
-
-                for chunk_index, chunk in enumerate(ds_time_slice.chunk({"x": chunk_size_x, "y": chunk_size_y}).data_vars.items()):
-                    var_name, chunk_data = chunk
-                    chunk_dataset = ds_time_slice.isel(
-                        x=slice(chunk_data.chunks[1][0]),
-                        y=slice(chunk_data.chunks[0][0])
-                    )
-
-                    stacked = self._convert_to_multiband(chunk_dataset)
-                    self._export_to_gcs(stacked, chunk_index, time_str, gcs_credentials, gcs_bucket, gcs_folder)
-
-        flag = kwargs.get('flag', 'GTiff')
-        output_folder = kwargs.get('output_folder', 'tiles')
-        gcs_credentials = kwargs.get('gcs_credentials', None)
-        gcs_bucket = kwargs.get('gcs_bucket', 'buckets-of-fun')
-        gcs_folder = kwargs.get('gcs_folder', None)
-
-        first_dim_name = list(ds_transposed.dims)[0]
-
-        for time_index in ds_transposed[first_dim_name].values:
-            ds_time_slice = ds_transposed.sel({first_dim_name: time_index})
-            time_str = self._format_time_string(time_index)
-
-            chunk_size_x = ds_time_slice.chunks["x"][0]
-            chunk_size_y = ds_time_slice.chunks["y"][0]
-
-            for chunk_index, chunk in enumerate(ds_time_slice.chunk({"x": chunk_size_x, "y": chunk_size_y}).data_vars.items()):
-                var_name, chunk_data = chunk
-                chunk_dataset = ds_time_slice.isel(
-                    x=slice(chunk_data.chunks[1][0]),
-                    y=slice(chunk_data.chunks[0][0])
-                )
-
-                stacked = self._convert_to_multiband(chunk_dataset)
-
-                if flag == "GTiff":
-                    self._export_to_geotiff(stacked, chunk_index, time_str, output_folder)
-                elif flag == "GCS":
-                    self._export_to_gcs(stacked, chunk_index, time_str, gcs_credentials, gcs_bucket, gcs_folder)
-        if flag == "GTiff":
-            self._generate_vrt_from_tifs()
+            self._export_to_gcs(stacked, chunk_index, time_str, gcs_prefix, gcs_credentials)
 
     def _format_time_string(self, time_index):
         """Convert time index to string for filenames."""
@@ -242,7 +161,49 @@ class ExportProcessor:
 
         print(f"Exported to GCS: {gcs_path} with bands {list(stacked.band.values)}")
 
-    def run_and_export_results(self, data_source: RasterDataset | EarthEngineDataset, **kwargs):
+    def _user_function_export_wrapper(self, ds, *args):
+        """
+        Wrapper function that applies either `tune_user_function` or `apply_user_function`.
+        to the user's dataset. This will convert the user's dataset to a pandas DataFrame
+        first before running the user's function.
+        
+        Parameters:
+        - user_func: the user-defined function to apply.
+        - args: positional arguments to pass to the function.
+        - kwargs: keyword arguments to pass to the function.
+        
+        Returns:
+        - result: the result of applying the function to the dataframe.
+        """
+        
+        # Look into xarray.Dataset.from_dataframe
+        # Look into loading it directly to Dask b/c of warning below.
+        # UserWarning: Sending large graph of size 2.15 GiB.
+        # this may cause some slowdown.
+        # Consider loading the data with Dask directly
+        # or using futures or delayed objects to embed the data into the graph without repetition.
+        # See also https://docs.dask.org/en/stable/best-practices.html#load-data-with-dask for more information.
+        df_input = ds.to_dataframe().reset_index()
+        df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
+        df_output = df_output.set_index(list(ds.dims))
+        ds_output = df_output.to_xarray()
+        
+        ds_transposed = self._format_dataset(ds, ds_output)
+
+        time_val = ds['time'].values[0]
+        export_ds = ds_transposed.isel(time=0).drop_vars('time')
+
+        self._compute_chunks_and_export(export_ds)
+        return ds_output
+    
+    def _format_dataset(self, ds, ds_output):
+        # Format dataset by renaming, transposing, and ensuring CRS.
+        crs = ds.attrs.get('crs', None)
+        ds_renamed = ds_output.rename({'X': 'x', 'Y': 'y'})
+        ds_transposed = ds_renamed.transpose('time', 'y', 'x').rio.write_crs(crs)
+        return ds_transposed.sortby("y", ascending=False)
+    
+    def run_and_export_results(self, data_source: RasterDataset | EarthEngineDataset):
         # Keyword arguments:
         # flag: str
         # chunks: Optional[dict | str]
@@ -250,21 +211,74 @@ class ExportProcessor:
         # gcs_bucket: str
         # gcs_folder: str
         """Main function to apply user function and export results."""
+        
         if not callable(self.user_function_handler.user_function):
             raise ValueError("The provided function must be callable.")
 
         ds = data_source.dataset
-        chunks = kwargs.get('chunks', None)
+        chunks = self.kwargs.get('chunks', None)
         ds = self.user_function_handler._create_apply_chunk(ds, chunks)
-        
         template_xarray = self.user_function_handler._generate_template_xarray(ds)
 
-        result = xr.map_blocks(self.user_function_handler._user_function_wrapper, 
+        result = xr.map_blocks(self._user_function_export_wrapper, 
                                ds, 
-                               args=(self.user_function_handler.user_function,),
+                               #args=(self.user_function_handler.user_function,),
                                template=template_xarray)
+        result.compute()
+        
 
-        ds_transposed = self._format_dataset(result, ds)
+        #ds_transposed = self._format_dataset(result, ds)
+        #self._compute_chunks_and_export(ds_transposed)
+        #vrt_flag = self.kwargs.get("output_vrt", False)
+        #if vrt_flag:
+        #    self._generate_vrt_from_tifs()
+        #return result
+        
+        
+        """
+        ds = data_source.dataset
+        ds_block = ds.isel(time=0).chunk({'X': 512, 'Y': 512}).drop_vars("time")
+        #template = self.user_function_handler._generate_template_xarray(ds_block)
 
-        self._compute_chunks_and_export(ds_transposed, **kwargs)
-        return result
+        # Run the wrapper on just one block directly
+        result = self._user_function_export_wrapper(ds_block)
+        result.compute()
+        """
+        
+
+
+# CHATGPT WAY TO PARALLELIZE EXPORT PROCESS USING DASK DELAYED OBJECT
+# TAKES FOREVER...
+"""
+    def _compute_chunks(self, ds_transposed, export_func):
+        first_dim_name = list(ds_transposed.dims)[0]
+        export_tasks = []
+
+        for time_index in ds_transposed[first_dim_name].values:
+            ds_time_slice = ds_transposed.sel({first_dim_name: time_index})
+            time_str = self._format_time_string(time_index)
+
+            x_chunks = ds_time_slice.chunks["x"]
+            y_chunks = ds_time_slice.chunks["y"]
+
+            x_starts = [sum(x_chunks[:i]) for i in range(len(x_chunks))]
+            y_starts = [sum(y_chunks[:i]) for i in range(len(y_chunks))]
+
+            chunk_index = 0
+            for x_start, x_size in zip(x_starts, x_chunks):
+                for y_start, y_size in zip(y_starts, y_chunks):
+                    chunk_dataset = ds_time_slice.isel(
+                        x=slice(x_start, x_start + x_size),
+                        y=slice(y_start, y_start + y_size)
+                    )
+
+                    stacked = self._convert_to_multiband(chunk_dataset)
+
+                    # Wrap the export function in a Dask delayed task
+                    task = delayed(export_func)(stacked, chunk_index, time_str)
+                    export_tasks.append(task)
+                    chunk_index += 1
+
+        # Trigger all exports in parallel
+        dask.compute(*export_tasks)
+"""

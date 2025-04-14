@@ -38,3 +38,11 @@ experiment_code/TEST_EXPORT_DATASET.nc
 output.nc
 sample_data/TEST_EXPORT_DATASET.nc
 experiment_code/sample_data/TEST_EXPORT_DATASET.nc
+geometry/Export_Geometry_3310.geojson
+geometry/Export_Geometry.geojson
+geometry/Plumas_National_forest_3310.cpg
+geometry/Plumas_National_forest_3310.dbf
+geometry/Plumas_National_forest_3310.prj
+geometry/Plumas_National_forest_3310.qpj
+geometry/Plumas_National_forest_3310.shp
+geometry/Plumas_National_forest_3310.shx
