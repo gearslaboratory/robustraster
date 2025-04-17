@@ -160,17 +160,18 @@ class ExportProcessor:
         
         ds_transposed = self._format_dataset(ds, ds_output)
 
-        #time_val = ds['time'].values[0]
-        #export_ds = ds_transposed.isel(time=0).drop_vars('time')
-
-        self._compute_chunks_and_export(ds_transposed)
+        for i, time_val in enumerate(ds_transposed['time'].values):
+            self._time_value = time_val
+            slice_2d = ds_transposed.isel(time=i)
+            self._compute_chunks_and_export(slice_2d)
+            
         return ds_output
     
     def _format_dataset(self, ds, ds_output):
         # Format dataset by renaming, transposing, and ensuring CRS.
         crs = ds.attrs.get('crs', None)
         ds_renamed = ds_output.rename({'X': 'x', 'Y': 'y'})
-        ds_transposed = ds_renamed.transpose('y', 'x').rio.write_crs(crs)
+        ds_transposed = ds_renamed.transpose('time', 'y', 'x').rio.write_crs(crs)
         return ds_transposed.sortby("y", ascending=False)
     
     def _compute_chunks_and_export(self, ds_transposed):
@@ -205,7 +206,7 @@ class ExportProcessor:
 
         stacked.rio.to_raster(output_path, driver="GTiff")
         print(f"Exported: {output_path} with bands {list(stacked.band.values)}")
-        
+
     def run_and_export_results(self, data_source: RasterDataset | EarthEngineDataset):
         # Keyword arguments:
         # flag: str
@@ -221,23 +222,26 @@ class ExportProcessor:
         ds = data_source.dataset
         chunks = self.kwargs.get('chunks', None)
         ds = self.user_function_handler._create_apply_chunk(ds, chunks)
-        #template_xarray = self.user_function_handler._generate_template_xarray(ds)
-
 
         if self.kwargs.get("flag") == "GCS":
             self._gcs_prefix = self._create_bucket_and_folder(self.kwargs.get("gcs_credentials"), self.kwargs.get("gcs_bucket"), self.kwargs.get("gcs_folder", None))
-            
+
+        template_xarray = self.user_function_handler._generate_template_xarray(ds)
+        result = xr.map_blocks(self._user_function_export_wrapper,
+                                   ds,
+                                   template=template_xarray)
+        result.compute()
         # Loop through each time step and export the chunks. The chunks in each time step will
         # parallel write.
-        first_dim = list(ds.sizes)[0]
-        for i in range(ds.sizes[first_dim]):
-            self._time_value = ds['time'].values[i]
-            dim_slice = ds.isel({first_dim: i}).drop_vars('time')
-            template_xarray = self.user_function_handler._generate_template_xarray(dim_slice)
-            result = xr.map_blocks(self._user_function_export_wrapper,
-                                   dim_slice,
-                                   template=template_xarray)
-            result.compute()
+        #first_dim = list(ds.sizes)[0]
+        #for i in range(ds.sizes[first_dim]):
+        #    self._time_value = ds['time'].values[i]
+        #    dim_slice = ds.isel({first_dim: i}).drop_vars('time')
+        #    template_xarray = self.user_function_handler._generate_template_xarray(dim_slice)
+        #    result = xr.map_blocks(self._user_function_export_wrapper,
+        #                           dim_slice,
+        #                           template=template_xarray)
+        #    result.compute()
 
 
 
