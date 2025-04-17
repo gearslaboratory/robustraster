@@ -24,6 +24,9 @@ class ExportProcessor:
         """
         self.user_function_handler = user_function_handler
         self.kwargs = kwargs
+
+        self._time_value = None
+        self._gcs_prefix = None
     
     def _generate_vrt(self, input_files: list, output_vrt: str):
         """Generate a VRT file from a list of GeoTIFF files."""
@@ -66,31 +69,6 @@ class ExportProcessor:
         # This could be a hash or tuple of indices depending on your needs
         return hash(tuple(ds_block.coords[dim].values[0] for dim in ds_block.dims))
 
-    def _compute_chunks_and_export(self, ds_transposed):
-        """Export a single block (already chunked by Dask) using the appropriate method."""
-
-        flag = self.kwargs.get('flag', 'GTiff')
-        #vrt_flag = self.kwargs.get('output_vrt', False)
-        output_folder = self.kwargs.get('output_folder', 'tiles')
-        gcs_credentials = self.kwargs.get('gcs_credentials', None)
-        gcs_bucket = self.kwargs.get('gcs_bucket', 'buckets-of-fun')
-        gcs_folder = self.kwargs.get('gcs_folder', None)
-
-        # Determine time string from block content
-        time_str = self._get_block_time_str(ds_transposed)
-
-        # Generate a chunk_index from block content if needed
-        chunk_index = self._get_block_chunk_index(ds_transposed)
-
-        stacked = self._convert_to_multiband(ds_transposed)
-
-        if flag == "GTiff":
-            self._export_to_geotiff(stacked, chunk_index, time_str, output_folder)
-
-        elif flag == "GCS":
-            gcs_prefix = self._create_bucket_and_folder(gcs_credentials, gcs_bucket, gcs_folder)
-            self._export_to_gcs(stacked, chunk_index, time_str, gcs_prefix, gcs_credentials)
-
     def _format_time_string(self, time_index):
         """Convert time index to string for filenames."""
         return str(time_index).replace(":", "_").replace("-", "_").replace(" ", "_")
@@ -103,14 +81,6 @@ class ExportProcessor:
         if "spatial_ref" not in stacked.coords:
             print("CRS IS NOT SET! SET IT IN YOUR EARTH ENGINE CODE!")
         return stacked
-
-    def _export_to_geotiff(self, stacked, chunk_index, time_str, output_folder):
-        """Export dataset chunk as a GeoTIFF."""
-        os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, f"chunk_{chunk_index}_time_{time_str}.tif")
-
-        stacked.rio.to_raster(output_path, driver="GTiff")
-        print(f"Exported: {output_path} with bands {list(stacked.band.values)}")
 
     def _create_bucket_and_folder(self, gcs_credentials, gcs_bucket, gcs_folder):
         # Initialize GCS client
@@ -139,10 +109,10 @@ class ExportProcessor:
             gcs_prefix = f"gcs://{gcs_bucket}"
         return gcs_prefix
 
-    def _export_to_gcs(self, stacked, chunk_index, time_str, gcs_prefix, gcs_credentials):
+    def _export_to_gcs(self, stacked, chunk_index, time_str, gcs_credentials):
         """Export dataset chunk to Google Cloud Storage as a COG."""
         fs = gcsfs.GCSFileSystem(token=gcs_credentials)
-        gcs_path = posixpath.join(gcs_prefix, f"chunk_{chunk_index}_time_{time_str}.tif")
+        gcs_path = posixpath.join(self._gcs_prefix, f"chunk_{chunk_index}_time_{time_str}.tif")
         
         with MemoryFile() as memfile:
             with memfile.open(
@@ -190,19 +160,52 @@ class ExportProcessor:
         
         ds_transposed = self._format_dataset(ds, ds_output)
 
-        time_val = ds['time'].values[0]
-        export_ds = ds_transposed.isel(time=0).drop_vars('time')
+        #time_val = ds['time'].values[0]
+        #export_ds = ds_transposed.isel(time=0).drop_vars('time')
 
-        self._compute_chunks_and_export(export_ds)
+        self._compute_chunks_and_export(ds_transposed)
         return ds_output
     
     def _format_dataset(self, ds, ds_output):
         # Format dataset by renaming, transposing, and ensuring CRS.
         crs = ds.attrs.get('crs', None)
         ds_renamed = ds_output.rename({'X': 'x', 'Y': 'y'})
-        ds_transposed = ds_renamed.transpose('time', 'y', 'x').rio.write_crs(crs)
+        ds_transposed = ds_renamed.transpose('y', 'x').rio.write_crs(crs)
         return ds_transposed.sortby("y", ascending=False)
     
+    def _compute_chunks_and_export(self, ds_transposed):
+        """Export a single block (already chunked by Dask) using the appropriate method."""
+
+        flag = self.kwargs.get('flag', 'GTiff')
+        #vrt_flag = self.kwargs.get('output_vrt', False)
+        output_folder = self.kwargs.get('output_folder', 'tiles')
+        gcs_credentials = self.kwargs.get('gcs_credentials', None)
+        gcs_bucket = self.kwargs.get('gcs_bucket', 'buckets-of-fun')
+        gcs_folder = self.kwargs.get('gcs_folder', None)
+
+        # Determine time string from block content
+        #time_str = self._get_block_time_str(ds_transposed)
+        time_str = self._format_time_string(self._time_value)
+        # Generate a chunk_index from block content if needed
+        chunk_index = self._get_block_chunk_index(ds_transposed)
+
+        stacked = self._convert_to_multiband(ds_transposed)
+
+        if flag == "GTiff":
+            self._export_to_geotiff(stacked, chunk_index, time_str, output_folder)
+
+        elif flag == "GCS":
+            #gcs_prefix = self._create_bucket_and_folder(gcs_credentials, gcs_bucket, gcs_folder)
+            self._export_to_gcs(stacked, chunk_index, time_str, gcs_credentials)
+
+    def _export_to_geotiff(self, stacked, chunk_index, time_str, output_folder):
+        """Export dataset chunk as a GeoTIFF."""
+        os.makedirs(output_folder, exist_ok=True)
+        output_path = os.path.join(output_folder, f"chunk_{chunk_index}_time_{time_str}.tif")
+
+        stacked.rio.to_raster(output_path, driver="GTiff")
+        print(f"Exported: {output_path} with bands {list(stacked.band.values)}")
+        
     def run_and_export_results(self, data_source: RasterDataset | EarthEngineDataset):
         # Keyword arguments:
         # flag: str
@@ -218,13 +221,34 @@ class ExportProcessor:
         ds = data_source.dataset
         chunks = self.kwargs.get('chunks', None)
         ds = self.user_function_handler._create_apply_chunk(ds, chunks)
-        template_xarray = self.user_function_handler._generate_template_xarray(ds)
+        #template_xarray = self.user_function_handler._generate_template_xarray(ds)
 
-        result = xr.map_blocks(self._user_function_export_wrapper, 
-                               ds, 
-                               #args=(self.user_function_handler.user_function,),
-                               template=template_xarray)
-        result.compute()
+
+        if self.kwargs.get("flag") == "GCS":
+            self._gcs_prefix = self._create_bucket_and_folder(self.kwargs.get("gcs_credentials"), self.kwargs.get("gcs_bucket"), self.kwargs.get("gcs_folder", None))
+            
+        # Loop through each time step and export the chunks. The chunks in each time step will
+        # parallel write.
+        first_dim = list(ds.sizes)[0]
+        for i in range(ds.sizes[first_dim]):
+            self._time_value = ds['time'].values[i]
+            dim_slice = ds.isel({first_dim: i}).drop_vars('time')
+            template_xarray = self.user_function_handler._generate_template_xarray(dim_slice)
+            result = xr.map_blocks(self._user_function_export_wrapper,
+                                   dim_slice,
+                                   template=template_xarray)
+            result.compute()
+
+
+
+
+
+
+        #result = xr.map_blocks(self._user_function_export_wrapper, 
+        #                       ds, 
+        #                       #args=(self.user_function_handler.user_function,),
+        #                       template=template_xarray)
+        #result.compute()
         
 
         #ds_transposed = self._format_dataset(result, ds)
