@@ -17,3 +17,6 @@ $ anaconda upload C:\anaconda3\conda-bld\win-64\robustraster-0.2.0-py310_1.conda
 
 Built packages will typically be stored in /anaconda3/conda-bld. If you built the package
 in an environment, it will be stored in /anaconda/envs/robustraster/conda-bld
+
+
+GDAL=3.10.2

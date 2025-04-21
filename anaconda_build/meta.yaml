@@ -27,6 +27,7 @@ requirements:
     - tornado=6.4.2
     - GDAL=3.10.2
     - geopandas=1.0.1
+    - gcsfs=2025.3.2
 
 about:
   summary: "A custom Anaconda package including Conda and Pip dependencies"
