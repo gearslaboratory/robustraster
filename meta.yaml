@@ -1,0 +1,47 @@
+package:
+  name: robustraster
+  version: "0.2.0"
+
+source:
+  path: .
+
+build:
+  noarch: python
+  number: 1
+  script: python -m pip install ./src
+
+requirements:
+  build:
+    - python >=3.8
+    - pip
+    - setuptools
+  run:
+    - python >=3.8
+    - numpy >=2.0
+    - xee =0.0.13
+    - rioxarray =0.15.0
+    - dask =2024.8.1
+    - distributed =2024.8.1
+    - cloudpickle =3.0.0
+    - lz4 =4.3.3
+    - msgpack-python =1.0.8
+    - pandas =2.2.2
+    - tornado =6.4.2
+    - geopandas =1.0.1
+    - gcsfs =2025.3.2
+
+test:
+  source_files:
+    - tests/
+  requires:
+    - pytest
+  commands:
+    - pytest tests/
+
+about:
+  summary: "A custom Anaconda package including Conda and Pip dependencies"
+  license: "MIT"
+
+extra:
+  recipe-maintainers:
+    - adrianom

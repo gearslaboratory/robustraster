@@ -14,3 +14,4 @@ beautifulsoup4==4.12.3
 lxml==5.3.0 
 soupsieve==2.6
 geopandas==1.0.1
+gcsfs==2025.3.2
