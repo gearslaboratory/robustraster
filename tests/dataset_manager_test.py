@@ -43,6 +43,21 @@ def test_read_data_invalid_file(temp_invalid_file):
     with pytest.raises(rasterio.errors.RasterioIOError, match="not recognized as being in a supported file format"):
         RasterDataset(temp_invalid_file)
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_earth_engine():
+    # Inject the variable if it’s not already set
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") is None:
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r"C:/Users\Adriano Matos/Documents/credentials/earthengine_key/robust-raster-cecdcc4b5fba.json"
+
+    credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    print(f"CREDENTIALS PATH: {credentials_path}")
+    print(f"EXISTS: {os.path.exists(credentials_path)}")
+    if credentials_path and os.path.exists(credentials_path):
+        ee.Initialize(ee.ServiceAccountCredentials(None, credentials_path),
+                      opt_url='https://earthengine-highvolume.googleapis.com')
+    else:
+        raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set correctly!")
+"""
 @pytest.fixture
 def setup_earth_engine():
     credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -52,7 +67,7 @@ def setup_earth_engine():
                       opt_url='https://earthengine-highvolume.googleapis.com')
     else:
         raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set correctly!")
-
+"""
 def _construct_test_fc_object(geometry):
     feature = ee.Feature(geometry)
     featureCollection = ee.FeatureCollection([feature])
