@@ -1,6 +1,6 @@
 package:
   name: robustraster
-  version: "0.2.0"
+  version: "0.3.0"
 
 source:
   path: .
@@ -45,3 +45,9 @@ about:
 extra:
   recipe-maintainers:
     - adrianom
+
+about:
+  summary: "Improved exporting"
+  description: |
+    Version 0.3.0 adds automatic Earth Engine authentication. It also adds
+    new export functions that are parallelized within the scope of Dask.
