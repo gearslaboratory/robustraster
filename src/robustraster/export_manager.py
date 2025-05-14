@@ -1,18 +1,12 @@
 from osgeo import gdal
 from rasterio.io import MemoryFile
 from .dataset_manager import RasterDataset, EarthEngineDataset
-from .udf_manager import UserFunctionHandler
-from typing import Optional, Callable
 from google.cloud import storage
 import xarray as xr
-import pandas as pd
 import gcsfs
 import os
 import glob
 import posixpath
-import dask
-from dask import delayed
-import dask.array as da
 
 class ExportProcessor:
     def __init__(self, user_function_handler=None, **kwargs):
