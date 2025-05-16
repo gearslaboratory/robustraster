@@ -4,9 +4,8 @@ import ee
 from distributed import WorkerPlugin
 
 class EEPlugin(WorkerPlugin):
-    def __init__(self, json_key: str = None):
-        self.json_key = json_key
-
+    def __init__(self):
+        pass
     def setup(self, worker):
         self.worker = worker
         try:

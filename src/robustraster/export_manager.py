@@ -184,7 +184,7 @@ class ExportProcessor:
         self._first_dim = list(data_source.dataset.dims)[0]
         chunks = self.kwargs.get('chunks', None)
         ds = self.user_function_handler._create_apply_chunk(data_source.dataset, chunks)
-
+        
         if self.kwargs.get("flag") == "GCS":
             self._gcs_prefix = self._create_bucket_and_folder(self.kwargs.get("gcs_credentials"), self.kwargs.get("gcs_bucket"), self.kwargs.get("gcs_folder", None))
 

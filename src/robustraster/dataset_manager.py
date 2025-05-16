@@ -237,7 +237,7 @@ class EarthEngineDataset(DataReaderInterface):
     >>> print(earth_engine.dataset)
     """
 
-    def __init__(self, parameters: dict) -> None:
+    def __init__(self, image_collection: ee.imagecollection.ImageCollection, dataset_params: dict) -> None:
         """
         Instantiate the EarthEngineDataset class. To instantiate an EarthEngineDataset object, 
         the user must pass in a dictionary object of parameters. Below is an example
@@ -324,7 +324,7 @@ class EarthEngineDataset(DataReaderInterface):
         - parameters (dict): A dictionary containing user parameters to query Earth Engine.
         """
 
-        self._xarray_data = self._read_data(parameters)
+        self._xarray_data = self._read_data(image_collection, dataset_params)
         self._max_chunks_limit = self._auto_compute_max_chunks()
     
     @property
@@ -429,10 +429,10 @@ class EarthEngineDataset(DataReaderInterface):
     
         return {f'{first_dim_name}': index, 'X': width, 'Y': height}
 
-    def _vector_to_fc(self, vector: str | ee.FeatureCollection):
+    def _vector_to_geometry(self, vector: str | ee.FeatureCollection):
         if isinstance(vector, ee.featurecollection.FeatureCollection):
             print("FEATURECOLLECTION!")
-            return vector
+            return vector.geometry()
         else:
             # Read local vector file (supports .shp, .geojson, .kml, etc.)
             gdf = gpd.read_file(vector)  # or .geojson, etc.
@@ -440,7 +440,7 @@ class EarthEngineDataset(DataReaderInterface):
             geojson_dict = json.loads(gdf.to_json())
             # Create an ee.FeatureCollection
             fc = ee.FeatureCollection(geojson_dict)
-            return fc
+            return fc.geometry()
     
     def _construct_ee_collection(self, parameters: dict) -> ee.ImageCollection:
         """
@@ -482,7 +482,7 @@ class EarthEngineDataset(DataReaderInterface):
         except ee.EEException:
             raise ee.EEException(f"Unrecognized argument type {type(collection)} to convert to an ImageCollection.")
 
-    def _read_data(self, parameters) -> xr.Dataset:
+    def _read_data(self, image_collection, dataset_params) -> xr.Dataset:
         """
         A private method not intended for user use. Read Earth Engine data and 
         convert it to xarray format.
@@ -494,23 +494,22 @@ class EarthEngineDataset(DataReaderInterface):
         - xarray.Dataset: The dataset containing the Earth Engine data.
         """
 
-        # Construct Earth Engine image collection query based on parameters
-        scale = parameters.get('scale', None)
-        crs = parameters.get('crs', None)
-        vector_path = parameters.get('vector_path', None)
-        fc = self._vector_to_fc(vector_path)
+        # Take in an ee.ImageCollection
+        # Sort by "system:time_start"
+        sorted_ic = image_collection.sort("system:time_start")
 
-        # Maybe make this a separate private function? #
-        ee_collection = self._construct_ee_collection(parameters).filterBounds(fc.geometry()).sort(("system:time_start"))
+        # Obtain all of the user's optional dataset parameters
+        # Use xr.open_dataset
 
-        # Fetch data from Earth Engine
+        if dataset_params['geometry'] and isinstance(dataset_params['geometry'], ee.geometry.Geometry):
+            sorted_ic = sorted_ic.filterBounds(dataset_params['geometry'])
+        elif dataset_params['geometry'] and not isinstance(dataset_params['geometry'], ee.geometry.Geometry):
+            dataset_params['geometry'] = self._vector_to_geometry(dataset_params['geometry'])
+            sorted_ic = sorted_ic.filterBounds(dataset_params['geometry'])
         xarray_data = xr.open_dataset(
-            ee_collection, 
-            engine='ee', 
-            crs=crs, 
-            scale=scale,
-            geometry=fc.geometry())#,
-            #chunks='auto')
-        
-        #xarray_data = xarray_data.sortby('time')
+            sorted_ic,
+            engine='ee',
+            **dataset_params
+        )
+
         return xarray_data

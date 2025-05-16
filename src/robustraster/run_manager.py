@@ -1,24 +1,27 @@
 # run.py
 
-from dataset_manager import RasterDataset, EarthEngineDataset
-from dask_cluster_manager import DaskClusterManager
-from export_manager import ExportProcessor
-from udf_manager import UserFunctionHandler
+from .dataset_manager import RasterDataset, EarthEngineDataset
+from .dask_cluster_manager import DaskClusterManager
+from .export_manager import ExportProcessor
+from .udf_manager import UserFunctionHandler
+from .dask_plugins import EEPlugin
 
-def DatasetAdapterFactory(source, dataset_params=None):
+
+def DatasetAdapterFactory(source, dataset, dataset_params=None):
     """
     Smart dispatcher:
     - if source == "ee" → EarthEngineDataset
     - if source is a file path (string or list) → RasterDataset
     """
-    if isinstance(source, str) and source.lower() == "ee":
-        return EarthEngineDataset(parameters=dataset_params)
-    elif isinstance(source, (str, list)):
+    if source == "ee":
+        return EarthEngineDataset(image_collection=dataset, dataset_params=dataset_params)
+    elif source == "local":
         return RasterDataset(file_path=source)
     else:
         raise ValueError("source must be 'ee' or a file path (str or list of str).")
 
 def run(
+    dataset,
     source,
     dataset_params=None,
     user_function=None,
@@ -61,11 +64,17 @@ def run(
     client = cluster_manager.get_dask_client
     print(f"[robustraster] Dask cluster started: {client}")
 
+    if source == 'ee':
+        ee_plugin = EEPlugin()
+        client.register_plugin(ee_plugin)
+        print("Dask workers authenticated via to Earth Engine...")
     # ===============================
     # Load dataset
     # ===============================
-    adapter = DatasetAdapterFactory(source, dataset_params)
+    adapter = DatasetAdapterFactory(source, dataset, dataset_params)
     data_source = adapter
+
+    #print(data_source.dataset)
 
     # ===============================
     # Call after_dataset_loaded hook
