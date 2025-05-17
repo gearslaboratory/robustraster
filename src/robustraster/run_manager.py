@@ -74,8 +74,6 @@ def run(
     adapter = DatasetAdapterFactory(source, dataset, dataset_params)
     data_source = adapter
 
-    #print(data_source.dataset)
-
     # ===============================
     # Call after_dataset_loaded hook
     # ===============================
