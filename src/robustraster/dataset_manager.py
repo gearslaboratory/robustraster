@@ -88,32 +88,43 @@ class RasterDataset(DataReaderInterface):
     
         for i, raster_path in enumerate(raster_paths):
             try:
-                with rioxarray.open_rasterio(raster_path, band_as_variable=True) as xarray_data:
-                    # Add a new "index" dimension and assign the current index
-                    xarray_data = xarray_data.expand_dims(time=[i + 1])  # Use i+1 for 1-based indexing
+                # Step 1: Extract band descriptions with rasterio
+                with rasterio.open(raster_path) as src:
+                    descriptions = src.descriptions  # Tuple of band names, can be None
 
-                    # Dynamically get the dimensions (first one should be 'time')
+                # Step 2: Load with rioxarray
+                with rioxarray.open_rasterio(raster_path, band_as_variable=True) as xarray_data:
+                    # Add a new "time" dimension
+                    xarray_data = xarray_data.expand_dims(index=[i + 1])  # 1-based index
+
+                    # Step 3: Rename bands if descriptions are available and valid
+                    if descriptions and all(desc is not None for desc in descriptions):
+                        rename_dict = {f"band_{j+1}": desc for j, desc in enumerate(descriptions)}
+                        xarray_data = xarray_data.rename(rename_dict)
+
+                    # Dynamically get the dimensions
                     dim_names = list(xarray_data.dims)
 
                     # Initialize chunk sizes with 'time' set to 48
-                    chunk_sizes = {dim_names[0]: 48}  # Assuming 'time' is the first dimension
+                    chunk_sizes = {dim_names[0]: 48}
 
-                    # Set chunk sizes for the other dimensions (second and third)
+                    # Set chunk sizes for the other dimensions
                     if len(dim_names) >= 2:
-                        chunk_sizes[dim_names[1]] = 512  # Set chunk size for the second dimension
+                        chunk_sizes[dim_names[1]] = 512
                     if len(dim_names) >= 3:
-                        chunk_sizes[dim_names[2]] = 256  # Set chunk size for the third dimension
-                    
-                    # Apply chunking with the defined chunk sizes
+                        chunk_sizes[dim_names[2]] = 256
+
+                    # Apply chunking
                     chunked_data = xarray_data.chunk(chunk_sizes)
 
                     datasets.append(chunked_data)
+
             except rasterio.errors.RasterioIOError as e:
                 print(f"Error reading raster data from {raster_path}: {e}")
                 raise
-        
-        # Combine all datasets along the "index" dimension
-        combined_dataset = xr.concat(datasets, dim="time")
+
+        # Combine all datasets along the "time" dimension
+        combined_dataset = xr.concat(datasets, dim="index")
 
         return combined_dataset
 

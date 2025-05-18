@@ -1,4 +1,5 @@
 from osgeo import gdal
+import rasterio
 from rasterio.io import MemoryFile
 from .dataset_manager import RasterDataset, EarthEngineDataset
 from google.cloud import storage
@@ -137,6 +138,7 @@ class ExportProcessor:
         elif self.kwargs.get('flag') == "GCS":
             self._export_to_gcs(stacked)
 
+    '''
     def _export_to_geotiff(self, stacked):
         """Export dataset chunk as a GeoTIFF."""
         output_folder = self.kwargs.get('output_folder', 'tiles')
@@ -145,6 +147,30 @@ class ExportProcessor:
 
         stacked.rio.to_raster(output_path, driver="GTiff")
         print(f"Exported: {output_path} with bands {list(stacked.band.values)}")
+    '''
+    def _export_to_geotiff(self, stacked):
+        output_folder = self.kwargs.get('output_folder', 'tiles')
+        os.makedirs(output_folder, exist_ok=True)
+        output_path = os.path.join(output_folder, f"{self._output_basename}.tif")
+
+        band_names = list(stacked.band.values)
+
+        with rasterio.open(
+            output_path,
+            "w",
+            driver="GTiff",
+            height=stacked.rio.height,
+            width=stacked.rio.width,
+            count=len(band_names),
+            dtype=str(stacked.dtype),
+            crs=stacked.rio.crs,
+            transform=stacked.rio.transform(),
+        ) as dst:
+            for idx, name in enumerate(band_names, start=1):
+                dst.write(stacked[idx - 1].values, indexes=idx)
+                dst.set_band_description(idx, str(name))
+
+        print(f"Exported: {output_path} with bands {band_names}")
 
     def _export_to_gcs(self, stacked):
         """Export dataset chunk to Google Cloud Storage as a COG."""
@@ -193,6 +219,10 @@ class ExportProcessor:
                                    ds,
                                    template=template_xarray)
         result.compute()
+
+        if self.kwargs.get('vrt'):
+            print("VRT")
+            self.export_vrt(data_source)
 
     def export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
         for i, time_val in enumerate(data_source.dataset[self._first_dim].values):

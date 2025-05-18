@@ -16,7 +16,7 @@ def DatasetAdapterFactory(source, dataset, dataset_params=None):
     if source == "ee":
         return EarthEngineDataset(image_collection=dataset, dataset_params=dataset_params)
     elif source == "local":
-        return RasterDataset(file_path=source)
+        return RasterDataset(file_path=dataset)
     else:
         raise ValueError("source must be 'ee' or a file path (str or list of str).")
 
@@ -32,80 +32,71 @@ def run(
     dask_kwargs=None,
     hooks=None
 ):
-    """
-    Main pipeline function.
-
-    Parameters:
-    - source: 'ee' for Earth Engine OR file path (str or list of str) for local rasters
-    - dataset_params: dict (only used if source='ee')
-    - user_function: user function (must accept dataframe, must return dataframe)
-    - export_params: dict of export options
-    - dask_mode: Dask cluster mode ('full' or 'test')
-    - dask_kwargs: optional custom Dask cluster settings
-    - hooks: optional dict of hooks {before_run, after_dataset_loaded, before_export, after_run}
-    """
     dataset_params = dataset_params or {}
     export_params = export_params or {}
     dask_kwargs = dask_kwargs or {}
     hooks = hooks or {}
     user_function_kwargs = user_function_kwargs or {}
 
-    # ===============================
-    # Call before_run hook
-    # ===============================
-    if "before_run" in hooks:
-        hooks["before_run"]()
+    cluster_manager = None
+    client = None
 
-    # ===============================
-    # Setup Dask cluster
-    # ===============================
-    cluster_manager = DaskClusterManager()
-    cluster_manager.create_cluster(mode=dask_mode, **dask_kwargs)
-    client = cluster_manager.get_dask_client
-    print(f"[robustraster] Dask cluster started: {client}")
+    try:
+        # ========== HOOK: before_run ==========
+        if "before_run" in hooks:
+            hooks["before_run"]()
 
-    if source == 'ee':
-        ee_plugin = EEPlugin()
-        client.register_plugin(ee_plugin)
-        print("Dask workers authenticated via to Earth Engine...")
-    # ===============================
-    # Load dataset
-    # ===============================
-    adapter = DatasetAdapterFactory(source, dataset, dataset_params)
-    data_source = adapter
+        # ========== Dask Setup ==========
+        cluster_manager = DaskClusterManager()
+        cluster_manager.create_cluster(mode=dask_mode, **dask_kwargs)
+        client = cluster_manager.get_dask_client
+        print(f"[robustraster] Dask cluster started: {client}")
 
-    # ===============================
-    # Call after_dataset_loaded hook
-    # ===============================
-    if "after_dataset_loaded" in hooks:
-        hooks["after_dataset_loaded"](data_source.dataset)
+        # Earth Engine Dask auth
+        if source == 'ee':
+            ee_plugin = EEPlugin()
+            client.register_plugin(ee_plugin)
+            print("[robustraster] Dask workers authenticated to Earth Engine.")
 
-    # ===============================
-    # Apply user function + export
-    # ===============================
-    if user_function is not None:
-        handler = UserFunctionHandler(
-            user_function=user_function,
-            *user_function_args,
-            **user_function_kwargs
-        )
+        # ========== Dataset Load ==========
+        adapter = DatasetAdapterFactory(source, dataset, dataset_params)
+        data_source = adapter
 
-        processor = ExportProcessor(
-            user_function_handler=handler,
-            **export_params
-        )
-        processor.run_and_export_results(data_source)
-    else:
-        print("[robustraster] No user function provided. Skipping export.")
+        # ========== HOOK: after_dataset_loaded ==========
+        if "after_dataset_loaded" in hooks:
+            hooks["after_dataset_loaded"](data_source.dataset)
 
-    # ===============================
-    # Call after_run hook
-    # ===============================
-    if "after_run" in hooks:
-        hooks["after_run"](data_source.dataset)
+        # ========== User Function + Export ==========
+        if user_function is not None:
+            handler = UserFunctionHandler(
+                user_function=user_function,
+                *user_function_args,
+                **user_function_kwargs
+            )
 
-    # ===============================
-    # Shutdown Dask cluster
-    # ===============================
-    client.close()
-    print("[robustraster] Dask cluster shut down.")
+            processor = ExportProcessor(
+                user_function_handler=handler,
+                **export_params
+            )
+            processor.run_and_export_results(data_source)
+
+            client.close()
+            client.shutdown()
+        else:
+            print("[robustraster] No user function provided. Skipping export.")
+
+        # ========== HOOK: after_run ==========
+        if "after_run" in hooks:
+            hooks["after_run"](data_source.dataset)
+
+    except Exception as e:
+        print("[robustraster] ❌ ERROR during run():", str(e))
+        raise  # Re-raise so users see the traceback unless you want silent failure
+
+    finally:
+        if client is not None:
+            client.close()
+            client.shutdown()
+            print("[robustraster] Dask client closed.")
+        if cluster_manager is not None:
+            print("[robustraster] Dask cluster shut down.")
