@@ -27,6 +27,7 @@ def run(
     user_function=None,
     user_function_args=(),
     user_function_kwargs=None,
+    tune_function=False,
     export_params=None,
     dask_mode="full",
     dask_kwargs=None,
@@ -74,10 +75,16 @@ def run(
                 **user_function_kwargs
             )
 
+            # Run tuning if requested
+            if tune_function:
+                print("[robustraster] Tuning user function...")
+                handler.tune_user_function(data_source)
+
             processor = ExportProcessor(
                 user_function_handler=handler,
                 **export_params
             )
+            print("[robustraster] Running user function...")
             processor.run_and_export_results(data_source)
 
             client.close()

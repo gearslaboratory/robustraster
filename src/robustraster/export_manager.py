@@ -221,7 +221,6 @@ class ExportProcessor:
         result.compute()
 
         if self.kwargs.get('vrt'):
-            print("VRT")
             self.export_vrt(data_source)
 
     def export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
