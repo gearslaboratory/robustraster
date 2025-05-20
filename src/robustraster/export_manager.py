@@ -220,7 +220,7 @@ class ExportProcessor:
                                    template=template_xarray)
         result.compute()
 
-        if self.kwargs.get('vrt'):
+        if self.kwargs.get('export_vrt'):
             self.export_vrt(data_source)
 
     def export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
