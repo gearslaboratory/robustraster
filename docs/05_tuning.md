@@ -1,10 +1,10 @@
 # Function Tuning with `tune_function`
 
-The `tune_function` parameter is designed to automatically optimize how your custom function is applied to large datasets. It evaluates your dataset and available system resources to determine the most efficient way to process the data in parallel.
+The `tune_function` parameter in `run()` is designed to automatically optimize how your custom function is applied to large datasets. It evaluates your dataset and available system resources to determine the most efficient way to process the data in parallel.
 
 ---
 
-## 🔍 What Does It Do?
+## What Does It Do?
 
 If you set `tune_function` to `True`, it will take in two things:
 
@@ -46,13 +46,13 @@ The tuning process follows this logic:
 5. Repeat steps 2–4.
 6. At each iteration, compare the most recent compute time to the previous one.
    - If performance worsens (i.e., time increases), return the chunk size from the previous iteration.
-7. Write the best-performing chunk size to a JSON file for later reuse.
+7. Use the best-performing chunk size to do a full run of your function on the dataset.
 
-📌 The tuning process **stops early** if the system runs out of memory or if performance degrades.
+The tuning process **stops early** if the system runs out of memory or if performance degrades.
 
 ---
 
-## 📁 What Does It Output?
+## What Does It Output?
 
 - A **JSON file** containing the optimal chunk configuration.
 - This file can later be reused when applying your function (you don’t have to re-tune it).

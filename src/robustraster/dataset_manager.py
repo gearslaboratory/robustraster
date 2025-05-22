@@ -175,7 +175,7 @@ class EarthEngineDataset(DataReaderInterface):
     >>>     'bands': ['SR_B4', 'SR_B5'],
     >>>     'start_date': '2020-05-01',
     >>>     'end_date': '2020-08-31',
-    >>>     'vector': WSDemo.geometry(),
+    >>>     'geometry': WSDemo.geometry(),
     >>>     'crs': 'EPSG:3310',
     >>>     'scale': 30,
     >>>     'map_function': prep_sr_l8
@@ -235,7 +235,7 @@ class EarthEngineDataset(DataReaderInterface):
     >>>     'bands': ['SR_B4', 'SR_B5'],
     >>>     'start_date': '2020-05-01',
     >>>     'end_date': '2020-08-31',
-    >>>     'vector': WSDemo.geometry(),
+    >>>     'geometry': WSDemo.geometry(),
     >>>     'crs': 'EPSG:3310',
     >>>     'scale': 30,
     >>>     'map_function': prep_sr_l8
@@ -259,7 +259,7 @@ class EarthEngineDataset(DataReaderInterface):
         >>>     'bands': ['SR_B4', 'SR_B5'],
         >>>     'start_date': '2020-05-01',
         >>>     'end_date': '2020-08-31',
-        >>>     'vector': WSDemo.geometry(),
+        >>>     'geometry': WSDemo.geometry(),
         >>>     'crs': 'EPSG:3310',
         >>>     'scale': 30,
         >>>     'map_function': prep_sr_l8
@@ -319,7 +319,7 @@ class EarthEngineDataset(DataReaderInterface):
         >>>     'bands': ['SR_B4', 'SR_B5'],
         >>>     'start_date': '2020-05-01',
         >>>     'end_date': '2020-08-31',
-        >>>     'vector': WSDemo.geometry(),
+        >>>     'geometry': WSDemo.geometry(),
         >>>     'crs': 'EPSG:3310',
         >>>     'scale': 30,
         >>>     'map_function': prep_sr_l8
@@ -512,11 +512,11 @@ class EarthEngineDataset(DataReaderInterface):
         # Obtain all of the user's optional dataset parameters
         # Use xr.open_dataset
 
-        if dataset_params['vector'] and isinstance(dataset_params['vector'], ee.geometry.Geometry):
-            sorted_ic = sorted_ic.filterBounds(dataset_params['vector'])
-        elif dataset_params['vector'] and not isinstance(dataset_params['vector'], ee.geometry.Geometry):
-            dataset_params['vector'] = self._vector_to_geometry(dataset_params['vector'])
-            sorted_ic = sorted_ic.filterBounds(dataset_params['vector'])
+        if dataset_params['geometry'] and isinstance(dataset_params['geometry'], ee.geometry.Geometry):
+            sorted_ic = sorted_ic.filterBounds(dataset_params['geometry'])
+        elif dataset_params['geometry'] and not isinstance(dataset_params['geometry'], ee.geometry.Geometry):
+            dataset_params['geometry'] = self._vector_to_geometry(dataset_params['geometry'])
+            sorted_ic = sorted_ic.filterBounds(dataset_params['geometry'])
         xarray_data = xr.open_dataset(
             sorted_ic,
             engine='ee',

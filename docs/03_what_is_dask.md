@@ -6,7 +6,7 @@ When working with large datasets—like satellite imagery or multi-terabyte rast
 
 ---
 
-## 🧠 Why Use Dask?
+## Why Use Dask?
 
 Think of Dask like a team of workers handling a big task:
 
@@ -17,7 +17,7 @@ That’s exactly what Dask does: it distributes the workload so your computer (o
 
 ---
 
-## ⚙️ How Dask Helps in `robustraster`
+## How Dask Helps in `robustraster`
 
 In the context of `robustraster`, Dask:
 
@@ -28,6 +28,6 @@ In the context of `robustraster`, Dask:
 
 ---
 
-## 📚 Want to Learn More?
+## Want to Learn More?
 
 To dive deeper, visit the [official Dask documentation](https://docs.dask.org/en/stable/).

@@ -8,7 +8,7 @@ def parse_requirements(filename):
 
 setup(
     name="robustraster",
-    version="0.2.0",
+    version="0.3.0",
     python_requires=">=3.10.16,<3.11",
     author="Adriano Matos",
     author_email="adrianom@unr.edu",

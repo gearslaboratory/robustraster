@@ -1,6 +1,6 @@
 # robustraster
 
-**robustraster** is a Python package that allows users to run their own functions on large geospatial datasets without having to write their own code for parallelization. The idea here is to make large-scale geospatial data analysis more accessible, lowering the barrier of entry for users not familiar with advanced computing techniques.
+**robustraster** is a Python package that allows users to run their own custom functions on large geospatial datasets without having to write their own code for parallelization. The idea here is to make large-scale geospatial data analysis more accessible, lowering the barrier of entry for users not familiar with advanced computing techniques.
 
 ---
 

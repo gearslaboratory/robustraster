@@ -192,7 +192,7 @@ class UserFunctionHandler:
                 self._tuned_chunk_size = self._max_chunks_limit
 
                 pmh.clean_up_files()
-                self._write_optimal_chunks_to_file()
+                #self._write_optimal_chunks_to_file()
                 return
             
         while True:
@@ -231,7 +231,7 @@ class UserFunctionHandler:
                     self._small_diff_count = 0
 
                     pmh.clean_up_files()
-                    self._write_optimal_chunks_to_file()
+                    #self._write_optimal_chunks_to_file()
                     return
 
                 # If latest is smaller, check the percentage difference
@@ -249,7 +249,7 @@ class UserFunctionHandler:
                             self._small_diff_count = 0
 
                             pmh.clean_up_files()
-                            self._write_optimal_chunks_to_file()
+                            #self._write_optimal_chunks_to_file()
                             return 
 
                         # If small_diff_count is less than 3, rerun with the same chunk size
@@ -268,7 +268,7 @@ class UserFunctionHandler:
                 self._small_diff_count = 0
 
                 pmh.clean_up_files()
-                self._write_optimal_chunks_to_file()
+                #self._write_optimal_chunks_to_file()
                 return
 
     def _get_bigger_slice(self, ds, ds_slice):
