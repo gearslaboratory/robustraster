@@ -67,21 +67,75 @@ from robustraster import run
 run(
     dataset=ic,
     source="ee",
-    dataset_params={
+    dataset_kwargs={
         "geometry": r"path\to\geojson-file.geojson",
         "crs": "EPSG:3310",
         "scale": 30
 },
     user_function=compute_ndvi,
     tune_function=True,
-    export_params={
+    export_kwargs={
         "flag": "GTiff", 
         "output_folder": "rush123", 
         "vrt": True}
 )
 ```
 
-## Example 2: Exporting to Local Machine + Using a Function with Positional Arguments
+## Example 2: Preview the Dataset Before Doing a Full Run (Via Hooks)
+
+In this example, we use a built-in hook function called `preview_dataset_hook` to preview the dataset **before** performing a full run.  
+This is useful to inspect your data structure and see what the DataFrame will look like before and after your custom function is applied.
+For more information on hooks, see [`04_run_function.md`](./04_run_function.md)
+
+```python
+from robustraster import run
+from robustraster.hooks import preview_dataset_hook
+
+run(
+    dataset=ic,
+    source="ee",
+    dataset_kwargs={
+    "geometry": r"path\to\geojson-file.geojson",
+    "crs": "EPSG:3310",
+    "scale": 30
+},
+    user_function=compute_ndvi,
+    tune_function=False,
+    hooks={
+        "after_dataset_loaded": preview_dataset_hook},
+    export_kwargs={
+        "flag": "GTiff", 
+        "output_folder": "rush123", 
+        "vrt": True}
+    }
+)
+```
+
+**Sample output preview:**
+
+```text
+Dataset preview:
+                     time              X             Y  SR_B4  SR_B5
+0 2018-05-09 18:38:10.899 -145860.087241  151568.60228    NaN    NaN
+1 2018-05-09 18:38:10.899 -145860.087241  151598.60228    NaN    NaN
+2 2018-05-09 18:38:10.899 -145860.087241  151628.60228    NaN    NaN
+3 2018-05-09 18:38:10.899 -145860.087241  151658.60228    NaN    NaN
+4 2018-05-09 18:38:10.899 -145860.087241  151688.60228    NaN    NaN
+
+User function output preview:
+                     time              X             Y  SR_B4  SR_B5  ndvi
+0 2018-05-09 18:38:10.899 -145860.087241  151568.60228    NaN    NaN   NaN
+1 2018-05-09 18:38:10.899 -145860.087241  151598.60228    NaN    NaN   NaN
+2 2018-05-09 18:38:10.899 -145860.087241  151628.60228    NaN    NaN   NaN
+3 2018-05-09 18:38:10.899 -145860.087241  151658.60228    NaN    NaN   NaN
+4 2018-05-09 18:38:10.899 -145860.087241  151688.60228    NaN    NaN   NaN
+```
+
+## Example 3: Exporting to Local Machine + Using a Function with Positional Arguments Using a Shapefile For `"geometry"`
+
+I modified my `compute_ndvi()` function to include a positional argument.
+I have also modified `"geometry"` to a path to a shapefile instead of a GEOJSON.
+
 ```python
 def compute_ndvi(df, number_to_add):
     df["ndvi"] = (df["SR_B5"] - df["SR_B4"] + number_to_add) / (df["SR_B5"] + df["SR_B4"])
@@ -91,12 +145,12 @@ run(
     dataset=ic,
     source="ee",
     dataset_params={
-        "geometry": r"path\to\geojson-file.geojson",
+        "geometry": r"path\to\shapefile.shp",
         "crs": "EPSG:3310",
         "scale": 30
 },
     user_function=compute_ndvi,
-    user_function_args=(666)
+    user_function_args=(666,)
     tune_function=True,
     export_params={
         "flag": "GTiff", 
@@ -104,9 +158,12 @@ run(
         "vrt": True}
 )
 ```
-## Example 3: Exporting to Local Machine + Using a Function with Keyword Arguments
-```python
+## Example 4: Exporting to Local Machine + Using a Function with Keyword Arguments + Using a FeatureCollection For `"geometry"`
 
+I show how to use keyword arguments here.
+I have also modified `"geometry"` to pass in a ee.FeatureCollection() object.
+
+```python
 def compute_ndvi(df, number_to_add):
     df["ndvi"] = (df["SR_B5"] - df["SR_B4"] + number_to_add) / (df["SR_B5"] + df["SR_B4"])
     return df
@@ -115,12 +172,12 @@ run(
     dataset=ic,
     source="ee",
     dataset_params={
-        "geometry": r"path\to\geojson-file.geojson",
+        "geometry": ee.FeatureCollection("path/to/fc"),
         "crs": "EPSG:3310",
         "scale": 30
 },
     user_function=compute_ndvi,
-    user_function_args={"number_to_add": 666}
+    user_function_kwargs={"number_to_add": 666},
     tune_function=True,
     export_params={
         "flag": "GTiff", 
@@ -130,7 +187,7 @@ run(
 ```
 ---
 
-## Example 4: Exporting to Google Cloud Storage with Custom Dask Configuration
+## Example 5: Exporting to Google Cloud Storage with Custom Dask Configuration
 
 In this example, we export the NDVI results to **Google Cloud Storage** instead of the local disk.  
 We also manually configure a custom Dask cluster.

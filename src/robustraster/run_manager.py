@@ -5,6 +5,7 @@ from .dask_cluster_manager import DaskClusterManager
 from .export_manager import ExportProcessor
 from .udf_manager import UserFunctionHandler
 from .dask_plugins import EEPlugin
+from .hooks import preview_dataset_hook
 
 import pandas as pd
 import ee
@@ -136,7 +137,14 @@ def run(
 
         # ========== HOOK: after_dataset_loaded ==========
         if "after_dataset_loaded" in hooks:
-            hooks["after_dataset_loaded"](data_source.dataset)
+            hook_fn = hooks["after_dataset_loaded"]
+
+            # If it's the preview hook, inject user_function automatically
+            if hook_fn == preview_dataset_hook:
+                hook_fn(data_source.dataset, user_function=user_function)
+                return
+            else:
+                hook_fn(data_source.dataset)
 
         # ========== User Function + Export ==========
         if user_function is not None:
