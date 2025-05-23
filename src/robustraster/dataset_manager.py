@@ -248,7 +248,7 @@ class EarthEngineDataset(DataReaderInterface):
     >>> print(earth_engine.dataset)
     """
 
-    def __init__(self, image_collection: ee.imagecollection.ImageCollection, dataset_params: dict) -> None:
+    def __init__(self, image_collection: ee.imagecollection.ImageCollection, dataset_kwargs: dict) -> None:
         """
         Instantiate the EarthEngineDataset class. To instantiate an EarthEngineDataset object, 
         the user must pass in a dictionary object of parameters. Below is an example
@@ -335,7 +335,7 @@ class EarthEngineDataset(DataReaderInterface):
         - parameters (dict): A dictionary containing user parameters to query Earth Engine.
         """
 
-        self._xarray_data = self._read_data(image_collection, dataset_params)
+        self._xarray_data = self._read_data(image_collection, dataset_kwargs)
         self._max_chunks_limit = self._auto_compute_max_chunks()
     
     @property
@@ -493,7 +493,7 @@ class EarthEngineDataset(DataReaderInterface):
         except ee.EEException:
             raise ee.EEException(f"Unrecognized argument type {type(collection)} to convert to an ImageCollection.")
 
-    def _read_data(self, image_collection, dataset_params) -> xr.Dataset:
+    def _read_data(self, image_collection, dataset_kwargs) -> xr.Dataset:
         """
         A private method not intended for user use. Read Earth Engine data and 
         convert it to xarray format.
@@ -512,15 +512,15 @@ class EarthEngineDataset(DataReaderInterface):
         # Obtain all of the user's optional dataset parameters
         # Use xr.open_dataset
 
-        if dataset_params['geometry'] and isinstance(dataset_params['geometry'], ee.geometry.Geometry):
-            sorted_ic = sorted_ic.filterBounds(dataset_params['geometry'])
-        elif dataset_params['geometry'] and not isinstance(dataset_params['geometry'], ee.geometry.Geometry):
-            dataset_params['geometry'] = self._vector_to_geometry(dataset_params['geometry'])
-            sorted_ic = sorted_ic.filterBounds(dataset_params['geometry'])
+        if dataset_kwargs['geometry'] and isinstance(dataset_kwargs['geometry'], ee.geometry.Geometry):
+            sorted_ic = sorted_ic.filterBounds(dataset_kwargs['geometry'])
+        elif dataset_kwargs['geometry'] and not isinstance(dataset_kwargs['geometry'], ee.geometry.Geometry):
+            dataset_kwargs['geometry'] = self._vector_to_geometry(dataset_kwargs['geometry'])
+            sorted_ic = sorted_ic.filterBounds(dataset_kwargs['geometry'])
         xarray_data = xr.open_dataset(
             sorted_ic,
             engine='ee',
-            **dataset_params
+            **dataset_kwargs
         )
 
         return xarray_data

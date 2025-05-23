@@ -141,7 +141,7 @@ def run(
         # ========== User Function + Export ==========
         if user_function is not None:
             handler = UserFunctionHandler(
-                user_function=user_function,
+                user_function,
                 *user_function_args,
                 **user_function_kwargs
             )
