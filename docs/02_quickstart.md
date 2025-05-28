@@ -7,7 +7,7 @@ I highly recommend trying the demo in the GitHub repo. You don’t need a full u
 
 ## Example 1: Exporting to Local Machine
 
-In this example, we’ll export NDVI tiles to your local machine using Earth Engine data and a user-defined function.
+In this example, we’ll export NDVI tiles to your local machine using Google Earth Engine data and a user-defined function.
 
 1. **Define a custom function** called `compute_ndvi()` that accepts and returns a pandas DataFrame.  
    - **Note** Custom functions must accept and return pandas DataFrames! This is required for all user-defined functions in `robustraster`.
@@ -19,12 +19,14 @@ In this example, we’ll export NDVI tiles to your local machine using Earth Eng
    - Select bands `SR_B4` and `SR_B5`.
 
 3. **Specify the dataset parameters** such as geometry, CRS, and scale.
-   - The geometry in this example is a GEOSJON file. For more details on dataset parameters, see [`04_run_function.md`](./04_run_function.md)
+   - The geometry in this example is a GEOJSON file, but you can also use a SHAPEFILE, an Earth Engine FeatureColllection, or an Earth Engine Geometry. For more details on dataset parameters, see [`04_run_function.md`](./04_run_function.md)
 
 4. **Call `run()`** with all parameters:
-   - This example include an optional `tune_function=True` to auto-optimize chunk size. For more details function tuning and chunks, see [`05_tuning.md`](./05_tuning.md) and [`03_what_is_dask.md`](./03_what_is_dask.md)
-   - Set `export_params["flag"] = "GTiff"` to export locally.
-   - Set `dask_mode="full"` to use all cores. Again, refer to [`03_what_is_dask.md`](./03_what_is_dask.md) for more information.
+   - Set `dataset` to the Earth Engine ImageCollection.
+   - Set `source` to "ee" for Earth Engine.
+   - Set our dataset parameters (export region, CRS, and scale) with `dataset_kwargs`.
+   - Set an optional `tune_function` to `True` to auto-optimize your function to your dataset in preparation for the full run. For more details function tuning, see [`05_tuning.md`](./05_tuning.md) and [`03_what_is_dask.md`](./03_what_is_dask.md)
+   - Set our export parameters (where to export, output folder name, export a VRT) using `export_kwargs`.
 
 ---
 
@@ -134,6 +136,7 @@ User function output preview:
 ## Example 3: Exporting to Local Machine + Using a Function with Positional Arguments Using a Shapefile For `"geometry"`
 
 I modified my `compute_ndvi()` function to include a positional argument.
+If your function requires positional arguments, this example shows how to use them.
 I have also modified `"geometry"` to a path to a shapefile instead of a GEOJSON.
 
 ```python
@@ -161,7 +164,7 @@ run(
 ## Example 4: Exporting to Local Machine + Using a Function with Keyword Arguments + Using a FeatureCollection For `"geometry"`
 
 I show how to use keyword arguments here.
-I have also modified `"geometry"` to pass in a ee.FeatureCollection() object.
+I have also modified `"geometry"` to pass in an EarthEngine FeatureCollection object.
 
 ```python
 def compute_ndvi(df, number_to_add):
@@ -190,7 +193,7 @@ run(
 ## Example 5: Exporting to Google Cloud Storage with Custom Dask Configuration
 
 In this example, we export the NDVI results to **Google Cloud Storage** instead of the local disk.  
-We also manually configure a custom Dask cluster.
+We also manually configure a custom Dask cluster. More info on Dask and clusters can be found in [`03_what_is_dask.md`](./03_what_is_dask.md).
 
 ---
 
@@ -198,9 +201,9 @@ We also manually configure a custom Dask cluster.
 
 1. **Re-use the same `compute_ndvi()` function** from Example 1.
 
-2. **Use the same Earth Engine image collection** setup and `dataset_params` from Example 1.
+2. **Use the same Earth Engine image collection** setup and `dataset_kwargs` from Example 1.
 
-3. **Set up `export_params` for GCS**:
+3. **Set up `export_kwargs` for GCS**:
    - `flag = "GCS"` tells the exporter to use Google Cloud Storage.
    - Provide the path to your service account credentials (`gcs_credentials`).
    - Specify the bucket and folder to export to (`gcs_bucket`, `gcs_folder`).
@@ -219,13 +222,13 @@ from robustraster import run
 run(
     dataset=ic,
     source="ee",
-    dataset_params={
+    dataset_kwargs={
         "geometry": r"path\to\geojson-file.geojson",
         "crs": "EPSG:3310",
         "scale": 30
     },
     user_function=compute_ndvi,
-    export_params={
+    export_kwargs={
         "flag": "GCS",
         "gcs_credentials": r"path\to\service-account-credentials.json",
         "gcs_bucket": "test-bucket",

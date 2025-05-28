@@ -23,8 +23,7 @@ In the context of `robustraster`, Dask:
 
 - Enables chunk-based, parallel processing of raster data
 - Allows efficient use of multicore systems or clusters
-- Works seamlessly with `xarray`, which is used to represent your datasets
-- Supports lazy computation: nothing is computed until you explicitly ask for results
+- Does all of the heavy lifting behind the scenes so you don't have to worry about interacting with it (although, I do encourage it)
 
 ---
 

@@ -1,6 +1,6 @@
-# Robust-Raster
+# robustraster
 
-Robust-Raster is a Python software package designed to empower scientists and researchers to analyze large satellite datasets effectively. In recent years, the amount of data collected from satellites has grown dramatically. While this data can provide insights into our planet, its sheer size poses significant challenges for traditional analysis methods. Robust-Raster bridges the gap, offering a user-friendly tool to perform custom analyses on large datasets without requiring advanced computing expertise.
+robustraster is a Python software package designed to empower scientists and researchers to analyze large satellite datasets effectively. In recent years, the amount of data collected from satellites has grown dramatically. While this data can provide insights into our planet, its sheer size poses significant challenges for traditional analysis methods. Robust-Raster bridges the gap, offering a user-friendly tool to perform custom analyses on large datasets without requiring advanced computing expertise.
 
 ## Purpose
 Google Earth Engine (GEE) is a powerful platform for accessing satellite data and analysis tools, but it has limitations in the types of analyses it can perform. Robust-Raster addresses these limitations by enabling users to:
