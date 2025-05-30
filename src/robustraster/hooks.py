@@ -7,7 +7,8 @@ def preview_dataset_hook(
     dataset: xr.Dataset,
     user_function: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None,
     preview_dims: int = 10,
-    preview_rows: int = 5
+    preview_rows: int = 5,
+    
 ):
     """
     Hook to preview an xarray dataset and optionally apply the user function to the preview.
@@ -45,7 +46,3 @@ def preview_dataset_hook(
             print("\nError running user function on preview:", e)
 
     return
-
-# Predefined constant with NDVI-style user function testing (replace as needed)
-# from robustraster.user_functions import compute_ndvi
-# PREVIEW_HOOK_WITH_FUNC = lambda ds: preview_dataset_hook(ds, user_function=compute_ndvi)

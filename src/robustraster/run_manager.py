@@ -31,79 +31,94 @@ def run(
     user_function: Callable[[], pd.DataFrame] = None,
     user_function_args: tuple = (),
     user_function_kwargs: dict[str, Any] = None,
+    preview_dataset: bool = False,
     tune_function: bool = False,
+    max_iterations: int = None,
     export_kwargs: dict[str, Any] = None,
     dask_mode: str = "full",
     dask_kwargs: dict[str, Any] = None,
     hooks: Optional[dict[str, Callable[..., Any]]] = None
 ):
     """
-    Run a user-defined function on a dataset.
+    Main interface to run a user-defined function across geospatial raster data.
 
-    Parameters:
+    This function handles:
+    - Loading either local raster files or Google Earth Engine collections
+    - Configuring a Dask cluster for distributed computation
+    - Running your custom `pandas` function on each tile
+    - Exporting the results to GeoTIFF or Google Cloud Storage
+    - (Optional) Automatically tuning the chunk size for optimal performance
 
-    dataset (str or list[str] or ee.ImageCollection): Can current accept the following:
-        1. A path to a raster file stored locally.
-        2. A list of raster files stored locally.
-        3. A Google Earth Engine-dervived image collection.
+    Parameters
+    ----------
+    dataset : str | list[str] | ee.ImageCollection
+        The input raster source.
+        - For local rasters: a file path or list of file paths to `.tif` files
+        - For Earth Engine: an `ee.ImageCollection` object
 
-    source (str): A string telling the function where this data came from. Acceptable
-                  strings include "local" for locally stored rasters and "ee" for 
-                  Earth Engine data.
-    
-    dataset_kwargs (str): A dictionary object (currently just for Google Earth Engine data) 
-                          that contains the export parameters for Earth Engine data. kwargs include:
-        1. "vector": Your area of interest or boundaries. This can be:
-            a. A path to a local shapefile
-            b. A path to a ZIP file containing your shapefile and it's dependent files.
-            c. A GEOJSON file
-            d. An ee.FeatureCollection() object
-            e. An ee.Geometry() object
-        2. "crs" (str): The coordinate system at which you want your dataset to be in. Required an EPSG code.
-        3. "scale" (int): The spatial resolution of your dataset.
-        4. "projection" (ee.Projection()): An ee.Projection() object. You can use "crs" and "projection" interchangably. 
-                         "projection" will allow for transformations, if you need that sort of thing.
-    user_function (Callable[[], pd.DataFrame]): Pass the function name here with this parameter. IMPORTANT:
-        The function must take in a pandas Dataframe as input and must return a pandas Dataframe with
-        the original x and y columns in tact.
-    user_function_args (tuple): If your function requires arguments, pass them along here.
-    user_function_kwargs (dict[str, Any]): If your function requires keyword arguments, pass them along here.
-    tune_function (bool): If True, the run() function will do some test runs of your function on your
-                          dataset to determine how to best do an optimized run of your function.
-    export_kwargs (dict[str, Any]): A dictionary object that contains export parameters of your fully
-                                    processed dataset (after running your function). This can be:
-        1. "flag" (str): There are currently only two available options here - "GTiff" and "GCS". "GTiff"
-                         will export the results to tiled geotiffs on your machine. If "GTiff" is selected,
-                         there are unique keyword arguments:
-                            a. "output_folder" (str): The folder path to store your geotiffs.
-                            b. "export_vrt" (bool): If True, export VRT files with your geotiffs.
-                         
-                         "GCS" will store the tiled geotiffs to your Google Cloud Storage bucket. If "GCS" is 
-                         selected, there are unique keyword arguments that go along with it: 
-                            a. "gcs_credentials" (str): A path to your service account's JSON key that has the 
-                                                        needed permissions to access your Google Cloud Storage
-                                                        buckets.
-                            b. "gcs_bucket" (str): The name of your Cloud Storage bucket. This will create the bucket
-                                                   if it is not created already.
-                            c. "gcs_folder" (str): The name of your Cloud Storage bucket.
-        2. "chunks" (dict or str): If "tune_function" is True, a JSON file will be generated that contains tuning information
-                                   needed to run your function on your dataset optimally. You can pass that file here as a path.
-                                   Optionally, you can pass in your own custom chunk size if you are familiar with how xarray
-                                   datasets work. 
-    dask_mode (str): Dask is a Python library that will do parallelization of your function. "dask_mode" refers to the amount
-                     of resources you would like to allocate to Dask to handle parallelization. There are three available options:
-                            a. "full" is the default parameter. This will allocate all of your CPU and RAM to Dask.
-                            b. "test" will allocate 1 CPU core to Dask.
-                            c. "custom" allows the user to allocate their own threshold of resources to Dask. Use "dask_kwargs" to
-                                pass your specified resources.
-    dask_kwargs (dict[str, Any]): Only required if "dask_mode" is set to "custom".
-        1. n_workers (int): Number of workers to create in the cluster. 
-                           Overrides the default value determined by the mode.
-        2. threads_per_worker (int): Number of threads per worker. 
-                                     Default is 1.
-        3. memory_limit (str): Memory limit per worker (e.g., "2GB"). 
-                               Overrides the default value determined by the mode.
-    
+    source : str
+        Must be either `"local"` or `"ee"`, indicating the data source type.
+
+    dataset_params : dict[str, Any], optional
+        Required only for Earth Engine. Includes:
+        - `geometry`: GeoJSON path, shapefile, zipped `.shp`, or native EE geometry/collection
+        - `crs`: Coordinate reference system (e.g., "EPSG:4326")
+        - `scale`: Spatial resolution (e.g., 30)
+        - `projection`: An `ee.Projection` object
+
+    user_function : Callable[[pd.DataFrame], pd.DataFrame]
+        Your custom function to apply. Must accept a `DataFrame` and return a `DataFrame`
+        with `x` and `y` columns preserved.
+
+    user_function_args : tuple, optional
+        Positional arguments passed to your function.
+        See Example 3 in `02_quickstart.md`.
+
+    user_function_kwargs : dict[str, Any], optional
+        Keyword arguments passed to your function.
+        See Example 4 in `02_quickstart.md`.
+
+    tune_function : bool, optional
+        Set to `True` to automatically determine optimal chunk size.
+        See `05_tuning.md` for more.
+
+    max_iterations : int, optional
+        Max steps to take during tuning (if `tune_function=True`).
+
+    export_params : dict[str, Any]
+        Configuration for export:
+        - `"GTiff"`:
+            - `output_folder`: local output path
+            - `vrt`: whether to generate a VRT mosaic
+        - `"GCS"`:
+            - `gcs_credentials`, `gcs_bucket`, `gcs_folder`
+            - `chunks`: manually specify Dask chunk sizes
+
+    dask_mode : str, optional
+        Controls cluster setup:
+        - `"full"`: Use all local resources (default)
+        - `"test"`: Single-threaded mode
+        - `"custom"`: Use `dask_kwargs`
+
+    dask_kwargs : dict[str, Any], optional
+        Required if `dask_mode="custom"`. Includes:
+        - `n_workers`: Number of workers
+        - `threads_per_worker`: Threads per worker (default is 1)
+        - `memory_limit`: RAM per worker (e.g., "2GB")
+
+    hooks : dict[str, Callable], optional
+        Functions triggered at key stages of execution:
+        - `before_run`: Run before any processing begins
+        - `after_dataset_loaded`: Run after loading the dataset
+        - `after_run`: Run after export is complete
+
+        One predefined hook is included: `preview_dataset_hook`, which previews a sample of
+        the dataset before and after applying your function. This halts execution immediately after.
+
+    Returns
+    -------
+    None
+        Results are exported to disk or cloud depending on `export_params`.
     """
     dataset_kwargs = dataset_kwargs or {}
     export_kwargs = export_kwargs or {}
@@ -115,6 +130,14 @@ def run(
     client = None
 
     try:
+        # ========== PREVIEW DATASET ===========
+        if preview_dataset:
+            adapter = DatasetAdapterFactory(source, dataset, dataset_kwargs)
+            data_source = adapter
+
+            preview_dataset_hook(data_source.dataset, user_function, *user_function_args, **user_function_kwargs)
+            return
+        
         # ========== HOOK: before_run ==========
         if "before_run" in hooks:
             hooks["before_run"]()
@@ -137,14 +160,7 @@ def run(
 
         # ========== HOOK: after_dataset_loaded ==========
         if "after_dataset_loaded" in hooks:
-            hook_fn = hooks["after_dataset_loaded"]
-
-            # If it's the preview hook, inject user_function automatically
-            if hook_fn == preview_dataset_hook:
-                hook_fn(data_source.dataset, user_function=user_function)
-                return
-            else:
-                hook_fn(data_source.dataset)
+            hooks["after_run"](data_source.dataset)
 
         # ========== User Function + Export ==========
         if user_function is not None:
@@ -155,9 +171,9 @@ def run(
             )
 
             # Run tuning if requested
-            if tune_function:
+            if tune_function or max_iterations:
                 print("[robustraster] Tuning user function...")
-                handler.tune_user_function(data_source)
+                handler.tune_user_function(data_source, max_iterations)
 
             processor = ExportProcessor(
                 user_function_handler=handler,

@@ -442,7 +442,6 @@ class EarthEngineDataset(DataReaderInterface):
 
     def _vector_to_geometry(self, vector: str | ee.FeatureCollection):
         if isinstance(vector, ee.featurecollection.FeatureCollection):
-            print("FEATURECOLLECTION!")
             return vector.geometry()
         else:
             # Read local vector file (supports .shp, .geojson, .kml, etc.)

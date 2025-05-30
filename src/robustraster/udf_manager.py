@@ -437,12 +437,6 @@ class UserFunctionHandler:
         4. Increase the chunk size by a factor of 2. 
         
         5. Repeat steps 1-4 on the newly created chunk until an optimal chunk size is found.
-
-        6. Writes the resulting optimal chunk size to a JSON file that can be passed into
-        `apply_user_function` (although if the UserFunctionHandler object that tuned the
-        user's function is still instantiated, this is not required). This is useful if you
-        want to run `apply_user_function` at a later time and don't want to tune your function
-        again. The JSON will have your progress from the last tuning session saved.
         
         With each iteration, checks are set in place to compare the compute time of the prior 
         iteration to the newest iteration. If compute time of the most recent iteration is 

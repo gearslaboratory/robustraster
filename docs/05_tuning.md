@@ -46,9 +46,11 @@ The tuning process follows this logic:
 5. At each iteration, compare the most recent compute time to the previous one.
    - If performance worsens (i.e., compute time increases), stop and return the chunk size from the previous iteration.
    - If performance is better (i.e. compute time decreases), repeat steps 2-4.
-7. Use the best-performing chunk size to do a full run of your function on the dataset.
+6. Use the best-performing chunk size to do a full run of your function on the dataset.
 
 The tuning process **stops early** if the system runs out of memory or if performance degrades.
+
+Steps 2-5 can be set with a hard limit with `max_iterations`. For example, if `max_iterations` is set to `10`, steps 2-5 will loop `10` times and stop.
 
 ---
 
@@ -58,4 +60,10 @@ Nothing really. You won't see anything happen on your screen. The best-performin
 
 ## Last Note
 
-`tune_function` is entirely optional. If set to `False`, tuning is skipped entirely and a default chunk size is used. The default chunk size will already do a pretty good job spliting apart your data in a way that will be effcient for your needs. At the moment, `tune_function` adds the time it takes to download data from Google Earth Engine to your machine as part of the computation process, which is not optimal. In the future, I would like to update my tuning to remove this as part of the optimization process as network speeds flucuate from user to user (additionally, Earth Engine is a free resource and can vary in it's download speeds as well.) You are also welcome to set `tune_function` to `False` and pass in your own custom chunk size in `export_kwargs` uisng the keyword `chunks`.
+The tune_function parameter is completely optional. When set to False (default), the tuning step is skipped and a default chunk size is used automatically. This default configuration already does a solid job splitting the data for efficient processing in most scenarios.
+
+Currently, enabling `tune_function=True` adds the time it takes to download data from Google Earth Engine into the performance calculation — which can distort results. Since network speeds vary between users and Earth Engine itself is a free shared resource with inconsistent throughput, this can lead to misleading optimization outcomes.
+
+In the future, I plan to improve this by isolating the function’s actual compute time from the data download time.
+
+If you prefer to control chunking directly, you can leave `tune_function=False` and pass your own chunk sizes via `export_params` using the `chunks` keyword.
