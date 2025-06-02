@@ -22,7 +22,7 @@ def DatasetAdapterFactory(source, dataset, dataset_kwargs=None):
     elif source == "local":
         return RasterDataset(file_path=dataset)
     else:
-        raise ValueError("source must be 'ee' or a file path (str or list of str).")
+        raise ValueError("Source must be 'ee' or a file path (str or list of str).")
 
 def run(
     dataset: str | list[str] | ee.imagecollection.ImageCollection,
@@ -59,7 +59,7 @@ def run(
     source : str
         Must be either `"local"` or `"ee"`, indicating the data source type.
 
-    dataset_params : dict[str, Any], optional
+    dataset_kwargs : dict[str, Any], optional
         Required only for Earth Engine. Includes:
         - `geometry`: GeoJSON path, shapefile, zipped `.shp`, or native EE geometry/collection
         - `crs`: Coordinate reference system (e.g., "EPSG:4326")
@@ -85,7 +85,7 @@ def run(
     max_iterations : int, optional
         Max steps to take during tuning (if `tune_function=True`).
 
-    export_params : dict[str, Any]
+    export_kwargs : dict[str, Any]
         Configuration for export:
         - `"GTiff"`:
             - `output_folder`: local output path
@@ -160,10 +160,23 @@ def run(
 
         # ========== HOOK: after_dataset_loaded ==========
         if "after_dataset_loaded" in hooks:
-            hooks["after_run"](data_source.dataset)
+            hooks["after_dataset_loaded"](data_source.dataset)
+
+        # ===== Check for export keyword arguments ====
+        if "flag" not in export_kwargs:
+            raise ValueError("Missing required export configuration: 'flag'")
+
+        flag = export_kwargs["flag"]
+
+        if flag == "GCS":
+            required_gcs_keys = ["gcs_credentials", "gcs_bucket"]
+            missing_keys = [k for k in required_gcs_keys if k not in export_kwargs]
+            if missing_keys:
+                raise ValueError(f"Missing required GCS export configuration: {', '.join(missing_keys)}")
+
 
         # ========== User Function + Export ==========
-        if user_function is not None:
+        if callable(user_function):
             handler = UserFunctionHandler(
                 user_function,
                 *user_function_args,
@@ -185,7 +198,7 @@ def run(
             client.close()
             client.shutdown()
         else:
-            print("[robustraster] No user function provided. Skipping export.")
+            raise ValueError("No user function was specified or user function is not callable! Please provide a function that accepts and returns a pandas DataFrame.")
 
         # ========== HOOK: after_run ==========
         if "after_run" in hooks:

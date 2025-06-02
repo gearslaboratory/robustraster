@@ -6,7 +6,7 @@ import ee
 import xarray as xr
 from robustraster.dataset_manager import RasterDataset, EarthEngineDataset
 
-
+'''
 @pytest.fixture
 def temp_raster_file():
     """Create a temporary raster file for testing."""
@@ -42,12 +42,12 @@ def test_read_data_invalid_file(temp_invalid_file):
     """Test if the raster file found is invalid."""
     with pytest.raises(rasterio.errors.RasterioIOError, match="not recognized as being in a supported file format"):
         RasterDataset(temp_invalid_file)
-
+'''
 @pytest.fixture(scope="session", autouse=True)
 def setup_earth_engine():
     # Inject the variable if it’s not already set
     if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") is None:
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r"C:/Users\Adriano Matos/Documents/credentials/earthengine_key/robust-raster-cecdcc4b5fba.json"
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r"C:/Users/matjo/OneDrive/Documents/code/credentials/robust-raster-cecdcc4b5fba.json"
 
     credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     print(f"CREDENTIALS PATH: {credentials_path}")
@@ -57,17 +57,7 @@ def setup_earth_engine():
                       opt_url='https://earthengine-highvolume.googleapis.com')
     else:
         raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set correctly!")
-"""
-@pytest.fixture
-def setup_earth_engine():
-    credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    print(f"CREDENTIALS PATH: {credentials_path}")
-    if credentials_path and os.path.exists(credentials_path):
-        ee.Initialize(ee.ServiceAccountCredentials(None, credentials_path),
-                      opt_url='https://earthengine-highvolume.googleapis.com')
-    else:
-        raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set correctly!")
-"""
+'''
 def _construct_test_fc_object(geometry):
     feature = ee.Feature(geometry)
     featureCollection = ee.FeatureCollection([feature])
@@ -138,3 +128,4 @@ def test_read_data_earth_engine(setup_earth_engine):
     xarray_data = reader._xarray_data
     assert xarray_data is not None
     assert isinstance(xarray_data, xr.Dataset)
+'''

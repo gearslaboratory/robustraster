@@ -29,12 +29,14 @@ requirements:
     - tornado =6.4.2
     - geopandas =1.0.1
     - gcsfs =2025.3.2
+    - gdal =3.10.2
 
 test:
   source_files:
     - tests/
   requires:
     - pytest
+    - gdal
   commands:
     - pytest tests/
 
