@@ -1,6 +1,6 @@
 package:
   name: robustraster
-  version: "0.3.0"
+  version: "0.4.0"
 
 source:
   path: .
@@ -47,7 +47,6 @@ extra:
     - adrianom
 
 about:
-  summary: "Improved exporting"
+  summary: "run() function + hooks"
   description: |
-    Version 0.3.0 adds automatic Earth Engine authentication. It also adds
-    new export functions that are parallelized within the scope of Dask.
+    Version 0.4.0 adds a new run() function, meant to be the interface for users to access the functionality of robustraster without having to deal with OOP. Also, added ways to run preprocessing/postprocessing functions via hooks.
