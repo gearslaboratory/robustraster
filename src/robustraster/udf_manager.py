@@ -134,22 +134,6 @@ class UserFunctionHandler:
         else:
             return False
 
-#    def _get_starting_slice(self, ds):
-#        # Get the name of the first dimension
-#        first_dim_name = list(ds.dims)[0]
-#
-#        # Get the size of the first dimension
-#        first_dim_size = ds.sizes[first_dim_name]
-#
-#        # Select a single chunk
-#        ds_slice = ds.isel(
-#            time=slice(0, first_dim_size),  # First time chunk
-#            X=slice(0, 1),   # First X chunk
-#            Y=slice(0, 1)    # First Y chunk
-#        )
-#
-#        return ds_slice  
-
     def _get_starting_slice(self, ds):
         # Get the dimension names
         dim_names = list(ds.dims)
@@ -311,25 +295,31 @@ class UserFunctionHandler:
             with open(chunks, 'r') as file:
                 chunks_data = json.load(file)
             ds = ds.chunk(chunks_data)
+            return ds
         # If the user passed in a custom chunk size as a dictionary...
         elif isinstance(chunks, dict):
             ds = ds.chunk(chunks)
+            return ds
         # If the user passed in None and ran `tune_user_function`...
         elif self._tuned_chunk_size:
             ds = ds.chunk(self._tuned_chunk_size)
+            return ds
         # If the user passed in None, did not run `tune_user_function` AND the
         # dataset is derived from an online data catalog...
         elif self._max_chunks_limit:
             ds = ds.chunk(self._max_chunks_limit)
+            return ds
         # If the user passed in None, did not run `tune_user_function` AND the
         # dataset is NOT derived from an online data catalog...
+        elif ds.chunks:
+            return ds
         else:
             safe_chunks = (48, 512, 256)
             # Create a dictionary mapping dimension names to chunk sizes
             chunk_dict = {dim: size for dim, size in zip(ds.dims, safe_chunks)}
             # Chunk the dataset
             ds = ds.chunk(chunk_dict)
-        return ds
+            return ds
 
     def _generate_template_xarray(self, ds):
         # Dynamically determine dimension names
@@ -361,9 +351,10 @@ class UserFunctionHandler:
                                             chunks=new_var_chunks, 
                                             dtype=processed_chunk[var].dtype))
         
+        
         template = xr.Dataset(
             template_vars,
-            coords={coord: ds.coords[coord] for coord in ds.coords},
+            coords={coord: ds.coords[coord] for coord in ds.coords if coord not in template_vars},
             attrs=ds.attrs
         )
         
@@ -559,7 +550,7 @@ class UserFunctionHandler:
         ds_slice = self._get_starting_slice(ds_chunked)
         
         return self._get_tuned_xarray(ds, ds_slice)
-        
+'''    
     def apply_user_function(self, data_source: RasterDataset | EarthEngineDataset, 
                             chunks: Optional[dict | str] = None):
         """
@@ -655,9 +646,13 @@ class UserFunctionHandler:
 
         ds = data_source.dataset
         ds = self._create_apply_chunk(ds, chunks)
+
+        template_xarray = self._generate_template_xarray(ds)
         result = xr.map_blocks(self._user_function_wrapper, 
                                ds, 
-                               args=(self.user_function,))
+                               args=(self.user_function,),
+                               template=template_xarray)
 
         result.persist()
         return result
+'''

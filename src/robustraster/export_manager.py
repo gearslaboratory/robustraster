@@ -124,7 +124,13 @@ class ExportProcessor:
     def _format_dataset(self, ds, ds_output):
         # Format dataset by renaming, transposing, and ensuring CRS.
         crs = ds.attrs.get('crs', None)
-        ds_renamed = ds_output.rename({'X': 'x', 'Y': 'y'})
+         # Rename dimensions only if needed
+        rename_dims = {}
+        if 'X' in ds_output.dims:
+            rename_dims['X'] = 'x'
+        if 'Y' in ds_output.dims:
+            rename_dims['Y'] = 'y'
+        ds_renamed = ds_output.rename(rename_dims)
         ds_transposed = ds_renamed.transpose(self._first_dim, 'y', 'x').rio.write_crs(crs)
         return ds_transposed.sortby("y", ascending=False)
     
@@ -138,16 +144,6 @@ class ExportProcessor:
         elif self.kwargs.get('flag') == "GCS":
             self._export_to_gcs(stacked)
 
-    '''
-    def _export_to_geotiff(self, stacked):
-        """Export dataset chunk as a GeoTIFF."""
-        output_folder = self.kwargs.get('output_folder', 'tiles')
-        os.makedirs(output_folder, exist_ok=True)
-        output_path = os.path.join(output_folder, f"{self._output_basename}.tif")
-
-        stacked.rio.to_raster(output_path, driver="GTiff")
-        print(f"Exported: {output_path} with bands {list(stacked.band.values)}")
-    '''
     def _export_to_geotiff(self, stacked):
         output_folder = self.kwargs.get('output_folder', 'tiles')
         os.makedirs(output_folder, exist_ok=True)

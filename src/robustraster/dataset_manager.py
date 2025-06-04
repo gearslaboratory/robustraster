@@ -123,8 +123,11 @@ class RasterDataset(DataReaderInterface):
                 print(f"Error reading raster data from {raster_path}: {e}")
                 raise
 
-        # Combine all datasets along the "time" dimension
+        # Combine all datasets along a dimension I am naming "index"
         combined_dataset = xr.concat(datasets, dim="index")
+        #if 'spatial_ref' in combined_dataset.coords:
+        #    combined_dataset = combined_dataset.drop_vars('spatial_ref')
+
 
         return combined_dataset
 
