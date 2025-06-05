@@ -30,6 +30,7 @@ requirements:
     - geopandas =1.0.1
     - gcsfs =2025.3.2
     - gdal =3.10.2
+    - ipykernel =6.29.5
 
 test:
   source_files:
@@ -40,15 +41,12 @@ test:
   commands:
     - pytest tests/
 
-about:
-  summary: "A custom Anaconda package including Conda and Pip dependencies"
-  license: "MIT"
-
 extra:
   recipe-maintainers:
     - adrianom
 
 about:
   summary: "run() function + hooks"
+  license: "MIT"
   description: |
     Version 0.4.0 adds a new run() function, meant to be the interface for users to access the functionality of robustraster without having to deal with OOP. Also, added ways to run preprocessing/postprocessing functions via hooks.
