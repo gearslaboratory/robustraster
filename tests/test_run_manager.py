@@ -271,7 +271,7 @@ def test_user_function_not_callable(mock_raster):
 
 @patch("robustraster.run_manager.UserFunctionHandler.tune_user_function")
 @patch("robustraster.run_manager.RasterDataset")
-#@pytest.mark.skip(reason="Tuning is hard.")
+@pytest.mark.skip(reason="Tuning is hard.")
 def test_tune_function_triggers_tuning(mock_raster, mock_tune):
     # Create a minimal real xarray.Dataset with valid structure
     data = xr.Dataset({

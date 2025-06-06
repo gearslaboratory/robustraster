@@ -10,6 +10,7 @@ $ conda install conda-build
 
 3. Build the package
 $ conda-build /path_to_recipe
+$ conda-build . -c conda-forge -c defaults
 
 4. Upload the package!
 $ anaconda login

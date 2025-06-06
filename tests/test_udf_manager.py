@@ -31,13 +31,13 @@ def test_user_function_handler_initialization_defaults():
     assert handler.kwargs == {}
 
 # ------ APPLY USER FUNCTION TESTING -------?
-'''
+
 # This function adds a 'sum' column but keeps the 'x' and 'y' structure
 def dummy_user_function(df: pd.DataFrame) -> pd.DataFrame:
     df["sum"] = df["band"]
     return df
 
-
+@pytest.mark.skip(reason="Tuning is hard...")
 def test_apply_user_function_returns_expected_result():
     # Create dataset with chunked dimensions
     data = xr.Dataset({
@@ -60,7 +60,7 @@ def test_apply_user_function_returns_expected_result():
 
     # Optionally check dimensions or shape
     assert result["sum"].shape == (4, 4)
-'''
+
 
 
 # ----- tune_user_function testing ------
