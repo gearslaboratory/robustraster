@@ -2,7 +2,8 @@
 
 from .dataset_manager import RasterDataset, EarthEngineDataset
 from .dask_cluster_manager import DaskClusterManager
-from .export_manager import ExportProcessor
+from .raster_export_manager import RasterExportProcessor
+from .vector_export_manager import VectorExportProcessor
 from .udf_manager import UserFunctionHandler
 from .dask_plugins import EEPlugin
 from .hooks import preview_dataset_hook
@@ -163,12 +164,9 @@ def run(
             hooks["after_dataset_loaded"](data_source.dataset)
 
         # ===== Check for export keyword arguments ====
-        if "flag" not in export_kwargs:
-            raise ValueError("Missing required export configuration: 'flag'")
+        gcs = export_kwargs.get("export_to_gcs", None)
 
-        flag = export_kwargs["flag"]
-
-        if flag == "GCS":
+        if gcs:
             required_gcs_keys = ["gcs_credentials", "gcs_bucket"]
             missing_keys = [k for k in required_gcs_keys if k not in export_kwargs]
             if missing_keys:
@@ -187,11 +185,22 @@ def run(
             if tune_function or max_iterations:
                 print("[robustraster] Tuning user function...")
                 handler.tune_user_function(data_source, max_iterations)
+            
+            if "mode" not in export_kwargs:
+                raise ValueError("Missing required export configuration: 'mode'")
+        
+            mode = export_kwargs["mode"]
 
-            processor = ExportProcessor(
-                user_function_handler=handler,
-                **export_kwargs
-            )
+            if mode == "raster":
+                processor = RasterExportProcessor(
+                    user_function_handler=handler,
+                    **export_kwargs
+                )
+            elif mode == "vector":
+                processor = VectorExportProcessor(
+                    user_function_handler=handler,
+                    **export_kwargs
+                )
             print("[robustraster] Running user function...")
             processor.run_and_export_results(data_source)
 
