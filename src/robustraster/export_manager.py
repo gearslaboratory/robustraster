@@ -121,6 +121,40 @@ class ExportProcessor:
         
         return ds_output
     
+    def _user_function_export_vector_wrapper(self, ds, *args):
+        """
+        Wrapper function that applies either `tune_user_function` or `apply_user_function`.
+        to the user's dataset. This will convert the user's dataset to a pandas DataFrame
+        first before running the user's function.
+        
+        Parameters:
+        - user_func: the user-defined function to apply.
+        - args: positional arguments to pass to the function.
+        - kwargs: keyword arguments to pass to the function.
+        
+        Returns:
+        - result: the result of applying the function to the dataframe.
+        """
+        df_input = ds.to_dataframe().reset_index()
+        df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
+        df_output = df_output.set_index(list(ds.dims))
+        ds_output = df_output.to_xarray()
+        
+        for i, time_val in enumerate(ds[self._first_dim].values):
+            self._time_value = time_val
+            slice_2d = ds.isel({self._first_dim: i})
+            self._output_basename = self._create_output_basename(slice_2d)
+            df_output.to_csv(f"{self._output_basename}.csv")
+        #ds_transposed = self._format_dataset(ds, ds_output)
+
+        '''for i, time_val in enumerate(ds_transposed[self._first_dim].values):
+            self._time_value = time_val
+            slice_2d = ds_transposed.isel({self._first_dim: i})
+            self._output_basename = self._create_output_basename(slice_2d)
+            self._compute_chunks_and_export(slice_2d)'''
+        
+        return ds_output
+    
     def _format_dataset(self, ds, ds_output):
         # Format dataset by renaming, transposing, and ensuring CRS.
         crs = ds.attrs.get('crs', None)
@@ -211,7 +245,7 @@ class ExportProcessor:
             self._gcs_prefix = self._create_bucket_and_folder(self.kwargs.get("gcs_credentials"), self.kwargs.get("gcs_bucket"), self.kwargs.get("gcs_folder", None))
 
         template_xarray = self.user_function_handler._generate_template_xarray(ds)
-        result = xr.map_blocks(self._user_function_export_wrapper,
+        result = xr.map_blocks(self._user_function_export_vector_wrapper,
                                    ds,
                                    template=template_xarray)
         result.compute()
