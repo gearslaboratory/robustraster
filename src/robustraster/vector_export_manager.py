@@ -111,11 +111,11 @@ class VectorExportProcessor:
         df_output = df_output.set_index(list(ds.dims))
         ds_output = df_output.to_xarray()
         
-        ds_transposed = self._format_dataset(ds, ds_output)
+        #ds_transposed = self._format_dataset(ds, ds_output)
 
-        for i, time_val in enumerate(ds_transposed[self._first_dim].values):
+        for i, time_val in enumerate(ds_output[self._first_dim].values):
             self._time_value = time_val
-            slice_2d = ds_transposed.isel({self._first_dim: i})
+            slice_2d = ds_output.isel({self._first_dim: i})
             self._output_basename = self._create_output_basename(slice_2d)
             if self.kwargs.get('export_to_gcs'):
                 self._export_csv_to_gcs(df_output)

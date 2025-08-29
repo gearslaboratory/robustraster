@@ -524,5 +524,5 @@ class EarthEngineDataset(DataReaderInterface):
             engine='ee',
             **dataset_kwargs
         )
-
+        
         return xarray_data
