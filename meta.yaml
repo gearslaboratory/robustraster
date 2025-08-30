@@ -1,6 +1,6 @@
 package:
   name: robustraster
-  version: "0.4.0"
+  version: "0.4.1"
 
 source:
   path: .
@@ -51,4 +51,4 @@ about:
   summary: "run() function + hooks"
   license: "MIT"
   description: |
-    Version 0.4.0 adds a new run() function, meant to be the interface for users to access the functionality of robustraster without having to deal with OOP. Also, added ways to run preprocessing/postprocessing functions via hooks.
+    Version 0.4.1 is a WIP version that tries to reintegrate Docker. 

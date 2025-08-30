@@ -1,5 +1,3 @@
-# tests/test_run_manager.py
-
 import pytest
 from robustraster.run_manager import run
 import pandas as pd
@@ -21,7 +19,7 @@ def test_invalid_source_raises_value_error():
             dataset="dummy.tif",
             source="invalid_source",
             user_function=dummy_function,
-            export_kwargs={"flag": "GTiff", "output_folder": "temp_out"}
+            export_kwargs={"mode": "raster", "output_folder": "temp_out"}
         )
 
 @patch("robustraster.run_manager.preview_dataset_hook")
@@ -39,11 +37,11 @@ def test_preview_dataset_hook_invoked(mock_raster, mock_preview):
         source="local",
         user_function=dummy_function,
         preview_dataset=True,
-        export_kwargs={"flag": "GTiff", "output_folder": "temp_out"},
+        export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="test"
     )
 
-    mock_preview.assert_called_once()  
+    mock_preview.assert_called_once()
 
 @patch("robustraster.run_manager.RasterDataset")
 def test_before_after_hooks_called(mock_raster):
@@ -63,7 +61,7 @@ def test_before_after_hooks_called(mock_raster):
         dataset="file.tif",
         source="local",
         user_function=dummy_function,
-        export_kwargs={"flag": "GTiff", "output_folder": "temp_out"},
+        export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="test",
         hooks={"before_run": before, "after_run": after}
     )
@@ -79,9 +77,6 @@ def test_dask_cluster_initialization(mock_cluster, mock_raster, dask_mode):
     # ✅ Create a mock xarray.Dataset
     mock_xr_dataset = MagicMock()
     mock_xr_dataset.dims = {"band": 1, "x": 256, "y": 256}  # must have `.dims`!
-
-    # 👇 Or more realistically, you could use a real small xarray object:
-    # mock_xr_dataset = xr.Dataset({"foo": (("x", "y"), np.zeros((5, 5)))})
 
     # Set up mock RasterDataset return value
     mock_raster_instance = MagicMock()
@@ -99,14 +94,14 @@ def test_dask_cluster_initialization(mock_cluster, mock_raster, dask_mode):
         dataset="dummy.tif",
         source="local",
         user_function=dummy_function,
-        export_kwargs={"flag": "GTiff", "output_folder": "temp_out"},
+        export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode=dask_mode
     )
 
     # Assertions
     mock_cluster.assert_called_once()
     mock_cluster_instance.create_cluster.assert_called_with(mode=dask_mode)
-    
+
 @patch("robustraster.run_manager.DaskClusterManager")
 @patch("robustraster.run_manager.RasterDataset")
 def test_custom_dask_mode_passes_kwargs(mock_raster, mock_cluster):
@@ -124,7 +119,7 @@ def test_custom_dask_mode_passes_kwargs(mock_raster, mock_cluster):
         dataset="dummy.tif",
         source="local",
         user_function=dummy_function,
-        export_kwargs={"flag": "GTiff", "output_folder": "temp_out"},
+        export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="custom",
         dask_kwargs=dask_kwargs
     )
@@ -132,9 +127,8 @@ def test_custom_dask_mode_passes_kwargs(mock_raster, mock_cluster):
     mock_cluster_instance.create_cluster.assert_called_with(mode="custom", **dask_kwargs)
 
 @patch("robustraster.run_manager.RasterDataset")
-@patch("robustraster.run_manager.ExportProcessor")
+@patch("robustraster.run_manager.RasterExportProcessor")
 @patch("robustraster.run_manager.DaskClusterManager")
-#@pytest.mark.skip(reason="RasterDataset logic still under development")
 def test_run_local_raster_minimal(mock_dask, mock_export, mock_raster):
     # Create a fake xarray-like dataset with a .dims attribute
     mock_dataset = MagicMock()
@@ -147,7 +141,7 @@ def test_run_local_raster_minimal(mock_dask, mock_export, mock_raster):
         dataset="dummy.tif",
         source="local",
         user_function=dummy_function,
-        export_kwargs={"flag": "GTiff", "output_folder": "temp_out"},
+        export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="test"
     )
 
@@ -182,7 +176,7 @@ def test_run_with_earth_engine(mock_cluster, mock_ee_dataset):
         source="ee",
         dataset_kwargs={"geometry": "test.geojson"},
         user_function=dummy_function,
-        export_kwargs={"flag": "GTiff", "output_folder": "temp_out"},
+        export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="test"
     )
 
@@ -195,7 +189,7 @@ def test_missing_export_kwargs_raises_error(mock_raster):
     mock_dataset.dims = {"x": 1, "y": 1}
     mock_raster.return_value.dataset = mock_dataset
 
-    with pytest.raises(ValueError, match=re.escape("Missing required export configuration: 'flag'")):
+    with pytest.raises(ValueError, match=re.escape("Missing required export configuration: 'mode'")):
         run(
             dataset="dummy.tif",
             source="local",
@@ -209,27 +203,27 @@ def test_missing_gcs_credentials_raises_value_error(mock_raster):
     mock_dataset.dims = {"x": 1, "y": 1}
     mock_raster.return_value.dataset = mock_dataset
 
-    with pytest.raises(ValueError, match=re.escape("gcs_credentials")):
+    with pytest.raises(ValueError, match=re.escape("Missing required GCS export configuration: gcs_credentials")):
         run(
             dataset="dummy.tif",
             source="local",
             user_function=dummy_function,
-            export_kwargs={"flag": "GCS", "gcs_bucket": "my_bucket"},
+            export_kwargs={"mode": "raster", "export_to_gcs": True, "gcs_bucket": "my_bucket"},
             dask_mode="test"
         )
-        
-@patch("robustraster.run_manager.RasterDataset")       
+
+@patch("robustraster.run_manager.RasterDataset")
 def test_missing_gcs_bucket_raises_value_error(mock_raster):
     mock_dataset = MagicMock()
     mock_dataset.dims = {"x": 1, "y": 1}
     mock_raster.return_value.dataset = mock_dataset
 
-    with pytest.raises(ValueError, match="gcs_bucket"):
+    with pytest.raises(ValueError, match=re.escape("Missing required GCS export configuration: gcs_bucket")):
         run(
             dataset="dummy.tif",
             source="local",
             user_function=dummy_function,
-            export_kwargs={"flag": "GCS", "gcs_credentials": "path/to/creds.json"},
+            export_kwargs={"mode": "raster", "export_to_gcs": True, "gcs_credentials": "path/to/creds.json"},
             dask_mode="test"
         )
 
@@ -241,12 +235,12 @@ def test_no_user_function(mock_raster):
 
     # Patch the RasterDataset's return to use our fake dataset
     mock_raster.return_value.dataset = mock_dataset
-    
-    with pytest.raises(ValueError, match=re.escape("No user function was specified or user function is not callable!")):
+
+    with pytest.raises(ValueError, match=re.escape("No user function was specified or user function is not callable! Please provide a function that accepts and returns a pandas DataFrame.")):
         run(
             dataset="file.tif",
             source="local",
-            export_kwargs={"flag": "GTiff", "output_folder": "temp_out"},
+            export_kwargs={"mode": "raster", "output_folder": "temp_out"},
             dask_mode="test"
         )
 
@@ -260,12 +254,12 @@ def test_user_function_not_callable(mock_raster):
     mock_raster.return_value.dataset = mock_dataset
 
     # Attempt to pass a non-callable object (like a string) as the user_function
-    with pytest.raises(ValueError, match=re.escape("No user function was specified or user function is not callable!")):
+    with pytest.raises(ValueError, match=re.escape("No user function was specified or user function is not callable! Please provide a function that accepts and returns a pandas DataFrame.")):
         run(
             dataset="file.tif",
             source="local",
             user_function="not_a_function",  # <-- Invalid input
-            export_kwargs={"flag": "GTiff", "output_folder": "temp_out"},
+            export_kwargs={"mode": "raster", "output_folder": "temp_out"},
             dask_mode="test"
         )
 
@@ -289,7 +283,7 @@ def test_tune_function_triggers_tuning(mock_raster, mock_tune):
         dataset="dummy.tif",
         source="local",
         user_function=lambda df: df,
-        export_kwargs={"flag": "GTiff", "output_folder": "temp_out"},
+        export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="test",
         tune_function=True
     )
