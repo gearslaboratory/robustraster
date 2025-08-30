@@ -31,6 +31,8 @@ requirements:
     - gcsfs =2025.3.2
     - gdal =3.10.2
     - ipykernel =6.29.5
+    - geemap =0.36.1
+    - docker-py =7.1.0
 
 test:
   source_files:

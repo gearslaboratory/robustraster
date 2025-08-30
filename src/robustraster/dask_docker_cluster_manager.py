@@ -1,107 +1,144 @@
+import uuid
+import multiprocessing
+import psutil
+from typing import Optional, Dict, Any
+
 import docker
-import psutil  # To get system memory information
 from dask.distributed import Client
 
-class DaskClusterManager:
-    def __init__(self):
+class DDClusterManager:
+    """
+    Docker-backed Dask cluster manager.
+    Mirrors the public API of `DaskClusterManager`.
+    """
+    def __init__(
+        self,
+        dask_client: Client = None,
+        docker_image: Optional[str] = None,
+        network_name: str = "dask-network",
+        **kwargs,
+    ) -> None:
+        self.dask_client = dask_client
+        self.docker_image = docker_image
+        self.network_name = kwargs.get("network_name", network_name)
         self.docker_client = docker.from_env()
-        self.network_name = "dask-network"
         self.scheduler = None
         self.workers = []
-        self.dask_client = None  # To store the Dask client object
+        self._container_prefix = f"dask-{uuid.uuid4().hex[:6]}"
 
-        # Create Docker network if it doesn't exist
+        if not self.docker_image:
+            raise ValueError("docker_image must be provided to DDClusterManager")
+
+        # Ensure network exists
         try:
             self.docker_client.networks.get(self.network_name)
         except docker.errors.NotFound:
             self.docker_client.networks.create(self.network_name, driver="bridge")
 
-    def create_test_cluster(self, *args, **kwargs):
-        # Get half of the available system memory
-        total_memory = psutil.virtual_memory().total
-        memory_limit = f"{total_memory // (2 * (1024**3))}GB"  # Convert to GB
-        
-        # Start Dask Scheduler
+    @property
+    def get_dask_client(self) -> Client:
+        return self.dask_client
+
+    def _default_memory_limit(self, n_workers: int) -> str:
+        total_gb = psutil.virtual_memory().total / (1024 ** 3)
+        per_worker = max(1, int(total_gb // max(1, n_workers)))
+        return f"{per_worker}GB"
+
+    def _launch_scheduler(self, ports: Dict[str, int] | None = None) -> None:
+        ports = ports or {'8786/tcp': 8786, '8787/tcp': 8787}
+        name = f"{self._container_prefix}-scheduler"
         self.scheduler = self.docker_client.containers.run(
-            "adrianomdocker/rrtest",
+            self.docker_image,
             command="dask-scheduler",
-            name="dask-scheduler",
+            name=name,
             network=self.network_name,
             detach=True,
-            ports={'8786/tcp': 8786, '8787/tcp': 8787},
+            ports=ports,
         )
-        print(f"Dask Scheduler started with ID {self.scheduler.id}")
+        print(f"Dask Scheduler started: {name} ({self.scheduler.short_id})")
 
-        # Extract any volume mounts passed via kwargs
-        volumes = kwargs.get('volumes', {})
-
-        # Start a single worker with 1 thread and half the system memory
+    def _launch_worker(self, idx: int, n_threads: int, memory_limit: str, volumes: Dict[str, dict] | None) -> None:
+        name = f"{self._container_prefix}-worker-{idx}"
         worker = self.docker_client.containers.run(
-            "adrianomdocker/rrtest",
-            command=f"dask-worker dask-scheduler:8786 --nthreads 1 --memory-limit {memory_limit}",
-            name="dask-worker-1",
+            self.docker_image,
+            command=f"dask-worker {self._container_prefix}-scheduler:8786 --nthreads {n_threads} --memory-limit {memory_limit}",
+            name=name,
             network=self.network_name,
             detach=True,
             mem_limit=memory_limit,
-            volumes=volumes
+            volumes=volumes or {},
         )
         self.workers.append(worker)
-        print(f"Dask Worker started with ID {worker.id}")
-        
-        print("Test cluster created with 1 worker and half the system memory.")
-        print("Dask dashboard available at http://localhost:8787")
+        print(f"Dask Worker {idx} started: {name} ({worker.short_id})")
 
-    def create_cluster(self, num_workers=1, n_threads=1, memory_limit="8GB", *args, **kwargs):
-        # Start Dask Scheduler
-        self.scheduler = self.docker_client.containers.run(
-            "adrianomdocker/rrtest",
-            command="dask-scheduler",
-            name="dask-scheduler",
-            network=self.network_name,
-            detach=True,
-            ports={'8786/tcp': 8786, '8787/tcp': 8787},
-        )
-        print(f"Dask Scheduler started with ID {self.scheduler.id}")
+    def create_cluster(self, mode: str = "full", **kwargs: Any) -> None:
+        """
+        Create a Docker-backed Dask cluster.
 
-        # Extract any volume mounts passed via kwargs
-        volumes = kwargs.get('volumes', {})
-        
-        # Start specified number of workers
-        for i in range(num_workers):
-            worker = self.docker_client.containers.run(
-                "adrianomdocker/rrtest",
-                command=f"dask-worker dask-scheduler:8786 --nthreads {n_threads} --memory-limit {memory_limit}",
-                name=f"dask-worker-{i+1}",
-                network=self.network_name,
-                detach=True,
-                mem_limit=memory_limit,
-                volumes=volumes  # Pass volumes if specified
-            )
-            self.workers.append(worker)
-            print(f"Dask Worker {i+1} started with ID {worker.id}")
-        
-        print(f"Cluster created with {num_workers} workers, each with {n_threads} threads and {memory_limit} memory limit.")
-        print("Dask dashboard available at http://localhost:8787")
+        kwargs:
+          - n_workers / num_workers (int)
+          - threads_per_worker / n_threads (int)
+          - memory_limit (str)
+          - volumes (dict)
+          - ports (dict)
+        """
+        cpu_cores = multiprocessing.cpu_count()
 
-    def stop_and_remove_containers(self):
-        # Stop and remove all workers
+        # harmonize kwargs
+        n_workers = kwargs.get("n_workers", kwargs.get("num_workers"))
+        threads_per_worker = kwargs.get("threads_per_worker", kwargs.get("n_threads", 1))
+        memory_limit = kwargs.get("memory_limit")
+        volumes = kwargs.get("volumes", {})
+        ports = kwargs.get("ports", None)
+
+        if mode == "full":
+            n_workers = n_workers or cpu_cores
+            threads_per_worker = threads_per_worker or 1
+            memory_limit = memory_limit or self._default_memory_limit(n_workers)
+        elif mode == "test":
+            n_workers = 1
+            threads_per_worker = 1
+            total_gb = int(psutil.virtual_memory().total / (1024 ** 3))
+            memory_limit = f"{max(1, total_gb // 2)}GB"
+        elif mode == "custom":
+            n_workers = n_workers or cpu_cores
+            threads_per_worker = threads_per_worker or 1
+            memory_limit = memory_limit or self._default_memory_limit(n_workers)
+        else:
+            raise ValueError("Invalid mode. Choose 'full', 'test', or 'custom'.")
+
+        # Launch scheduler and workers
+        self._launch_scheduler(ports=ports)
+        for i in range(1, n_workers + 1):
+            self._launch_worker(i, threads_per_worker, memory_limit, volumes)
+
+        # Connect client
+        self.dask_client = Client("tcp://localhost:8786")
+        print("Dask dashboard is available at: http://localhost:8787")
+
+    def shutdown(self) -> None:
+        # Stop and remove workers
         for worker in self.workers:
-            worker.stop()
-            worker.remove()
-            print(f"Dask Worker {worker.id} stopped and removed.")
+            try:
+                worker.stop()
+            except Exception:
+                pass
+            try:
+                worker.remove()
+            except Exception:
+                pass
+            print(f"Stopped & removed worker {worker.short_id}")
         self.workers = []
 
-        # Stop and remove the scheduler
+        # Stop and remove scheduler
         if self.scheduler:
-            self.scheduler.stop()
-            self.scheduler.remove()
-            print(f"Dask Scheduler {self.scheduler.id} stopped and removed.")
+            try:
+                self.scheduler.stop()
+            except Exception:
+                pass
+            try:
+                self.scheduler.remove()
+            except Exception:
+                pass
+            print(f"Stopped & removed scheduler {self.scheduler.short_id}")
             self.scheduler = None
-
-    def get_dask_client(self):
-        # Ensure that the scheduler is running
-        if not self.scheduler:
-            raise RuntimeError("Dask Scheduler is not running. Please start the cluster first.")
-        
-        self.dask_client = Client("tcp://localhost:8786")
-        return self.dask_client

@@ -1,7 +1,6 @@
-# run.py
-
 from .dataset_manager import RasterDataset, EarthEngineDataset
 from .dask_cluster_manager import DaskClusterManager
+from .dask_docker_cluster_manager import DDClusterManager  # NEW: Docker-based cluster manager
 from .raster_export_manager import RasterExportProcessor
 from .vector_export_manager import VectorExportProcessor
 from .udf_manager import UserFunctionHandler
@@ -38,92 +37,19 @@ def run(
     export_kwargs: dict[str, Any] = None,
     dask_mode: str = "full",
     dask_kwargs: dict[str, Any] = None,
-    hooks: Optional[dict[str, Callable[..., Any]]] = None
+    hooks: Optional[dict[str, Callable[..., Any]]] = None,
+    # --- NEW ---
+    dask_use_docker: bool = False,
+    dask_docker_image: Optional[str] = None,
+    dask_docker_kwargs: Optional[dict[str, Any]] = None,
 ):
     """
     Main interface to run a user-defined function across geospatial raster data.
-
-    This function handles:
-    - Loading either local raster files or Google Earth Engine collections
-    - Configuring a Dask cluster for distributed computation
-    - Running your custom `pandas` function on each tile
-    - Exporting the results to GeoTIFF or Google Cloud Storage
-    - (Optional) Automatically tuning the chunk size for optimal performance
-
-    Parameters
-    ----------
-    dataset : str | list[str] | ee.ImageCollection
-        The input raster source.
-        - For local rasters: a file path or list of file paths to `.tif` files
-        - For Earth Engine: an `ee.ImageCollection` object
-
-    source : str
-        Must be either `"local"` or `"ee"`, indicating the data source type.
-
-    dataset_kwargs : dict[str, Any], optional
-        Required only for Earth Engine. Includes:
-        - `geometry`: GeoJSON path, shapefile, zipped `.shp`, or native EE geometry/collection
-        - `crs`: Coordinate reference system (e.g., "EPSG:4326")
-        - `scale`: Spatial resolution (e.g., 30)
-        - `projection`: An `ee.Projection` object
-
-    user_function : Callable[[pd.DataFrame], pd.DataFrame]
-        Your custom function to apply. Must accept a `DataFrame` and return a `DataFrame`
-        with `x` and `y` columns preserved.
-
-    user_function_args : tuple, optional
-        Positional arguments passed to your function.
-        See Example 3 in `02_quickstart.md`.
-
-    user_function_kwargs : dict[str, Any], optional
-        Keyword arguments passed to your function.
-        See Example 4 in `02_quickstart.md`.
-
-    tune_function : bool, optional
-        Set to `True` to automatically determine optimal chunk size.
-        See `05_tuning.md` for more.
-
-    max_iterations : int, optional
-        Max steps to take during tuning (if `tune_function=True`).
-
-    export_kwargs : dict[str, Any]
-        Configuration for export:
-        - `"GTiff"`:
-            - `output_folder`: local output path
-            - `vrt`: whether to generate a VRT mosaic
-        - `"GCS"`:
-            - `gcs_credentials`, `gcs_bucket`, `gcs_folder`
-            - `chunks`: manually specify Dask chunk sizes
-
-    dask_mode : str, optional
-        Controls cluster setup:
-        - `"full"`: Use all local resources (default)
-        - `"test"`: Single-threaded mode
-        - `"custom"`: Use `dask_kwargs`
-
-    dask_kwargs : dict[str, Any], optional
-        Required if `dask_mode="custom"`. Includes:
-        - `n_workers`: Number of workers
-        - `threads_per_worker`: Threads per worker (default is 1)
-        - `memory_limit`: RAM per worker (e.g., "2GB")
-
-    hooks : dict[str, Callable], optional
-        Functions triggered at key stages of execution:
-        - `before_run`: Run before any processing begins
-        - `after_dataset_loaded`: Run after loading the dataset
-        - `after_run`: Run after export is complete
-
-        One predefined hook is included: `preview_dataset_hook`, which previews a sample of
-        the dataset before and after applying your function. This halts execution immediately after.
-
-    Returns
-    -------
-    None
-        Results are exported to disk or cloud depending on `export_params`.
     """
     dataset_kwargs = dataset_kwargs or {}
     export_kwargs = export_kwargs or {}
     dask_kwargs = dask_kwargs or {}
+    dask_docker_kwargs = dask_docker_kwargs or {}
     hooks = hooks or {}
     user_function_kwargs = user_function_kwargs or {}
 
@@ -138,16 +64,24 @@ def run(
 
             preview_dataset_hook(data_source.dataset, user_function, *user_function_args, **user_function_kwargs)
             return
-        
+
         # ========== HOOK: before_run ==========
         if "before_run" in hooks:
             hooks["before_run"]()
 
         # ========== Dask Setup ==========
-        cluster_manager = DaskClusterManager()
-        cluster_manager.create_cluster(mode=dask_mode, **dask_kwargs)
-        client = cluster_manager.get_dask_client
-        print(f"[robustraster] Dask cluster started: {client}")
+        if dask_use_docker:
+            if not dask_docker_image:
+                raise ValueError("dask_docker_image is required when dask_use_docker=True")
+            cluster_manager = DDClusterManager(docker_image=dask_docker_image, **dask_docker_kwargs)
+            cluster_manager.create_cluster(mode=dask_mode, **dask_kwargs)
+            client = cluster_manager.get_dask_client
+            print(f"[robustraster] Docker Dask cluster started: {client}")
+        else:
+            cluster_manager = DaskClusterManager()
+            cluster_manager.create_cluster(mode=dask_mode, **dask_kwargs)
+            client = cluster_manager.get_dask_client
+            print(f"[robustraster] Dask cluster started: {client}")
 
         # Earth Engine Dask auth
         if source == 'ee':
@@ -172,7 +106,6 @@ def run(
             if missing_keys:
                 raise ValueError(f"Missing required GCS export configuration: {', '.join(missing_keys)}")
 
-
         # ========== User Function + Export ==========
         if callable(user_function):
             handler = UserFunctionHandler(
@@ -185,10 +118,10 @@ def run(
             if tune_function or max_iterations:
                 print("[robustraster] Tuning user function...")
                 handler.tune_user_function(data_source, max_iterations)
-            
+
             if "mode" not in export_kwargs:
                 raise ValueError("Missing required export configuration: 'mode'")
-        
+
             mode = export_kwargs["mode"]
 
             if mode == "raster":
@@ -215,12 +148,23 @@ def run(
 
     except Exception as e:
         print("[robustraster] ❌ ERROR during run():", str(e))
-        raise  # Re-raise so users see the traceback unless you want silent failure
+        raise
 
     finally:
         if client is not None:
-            client.close()
-            client.shutdown()
+            try:
+                client.close()
+            except Exception:
+                pass
+            try:
+                client.shutdown()
+            except Exception:
+                pass
             print("[robustraster] Dask client closed.")
         if cluster_manager is not None:
+            if hasattr(cluster_manager, "shutdown"):
+                try:
+                    cluster_manager.shutdown()
+                except Exception:
+                    pass
             print("[robustraster] Dask cluster shut down.")
