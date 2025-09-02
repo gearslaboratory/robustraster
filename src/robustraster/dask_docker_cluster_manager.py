@@ -49,7 +49,7 @@ class DDClusterManager:
         name = f"{self._container_prefix}-scheduler"
         self.scheduler = self.docker_client.containers.run(
             self.docker_image,
-            command="dask-scheduler",
+            command="dask-scheduler --host 0.0.0.0 --dashboard-address :8787",
             name=name,
             network=self.network_name,
             detach=True,
@@ -61,7 +61,7 @@ class DDClusterManager:
         name = f"{self._container_prefix}-worker-{idx}"
         worker = self.docker_client.containers.run(
             self.docker_image,
-            command=f"dask-worker {self._container_prefix}-scheduler:8786 --nthreads {n_threads} --memory-limit {memory_limit}",
+            command=f"dask-worker tcp://{self._container_prefix}-scheduler:8786 --nthreads {n_threads} --memory-limit {memory_limit}",
             name=name,
             network=self.network_name,
             detach=True,
@@ -82,6 +82,7 @@ class DDClusterManager:
           - volumes (dict)
           - ports (dict)
         """
+        print("APPLES")
         cpu_cores = multiprocessing.cpu_count()
 
         # harmonize kwargs
@@ -111,12 +112,27 @@ class DDClusterManager:
         self._launch_scheduler(ports=ports)
         for i in range(1, n_workers + 1):
             self._launch_worker(i, threads_per_worker, memory_limit, volumes)
+        
+        self.dask_client = Client("tcp://127.0.0.1:8786")
 
-        # Connect client
-        self.dask_client = Client("tcp://localhost:8786")
-        print("Dask dashboard is available at: http://localhost:8787")
 
-    def shutdown(self) -> None:
+"""
+# Connect client (retry while scheduler boots)
+import time, socket
+address = ("localhost", 8786)
+deadline = time.time() + 45
+while time.time() < deadline:
+    with socket.socket() as s:
+        s.settimeout(1.5)
+        try:
+            s.connect(address)
+            break
+        except OSError:
+            time.sleep(0.5)
+# Final connect via Dask
+self.dask_client = Client("tcp://localhost:8786", timeout="30s")
+print("Dask dashboard is available at: http://localhost:8787")
+def shutdown(self) -> None:
         # Stop and remove workers
         for worker in self.workers:
             try:
@@ -142,3 +158,4 @@ class DDClusterManager:
                 pass
             print(f"Stopped & removed scheduler {self.scheduler.short_id}")
             self.scheduler = None
+"""

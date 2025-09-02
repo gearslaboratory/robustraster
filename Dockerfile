@@ -1,22 +1,11 @@
-# Specify the base image with Python 3.10.12
-FROM python:3.10.18-slim-buster
+# syntax=docker/dockerfile:1.7
+FROM daskdev/dask:2024.8.1-py3.10
+#USER root
 
-# Automatically trims unmanaged memory in Dask workers at the cost of performance 
-# due to continuous system calls.
-# Copy the Dask configuration file into the container
-#COPY distributed.yaml /etc/dask/distributed.yaml
+# Cache conda pkgs across layers for fast rebuilds
+RUN --mount=type=cache,target=/opt/conda/pkgs \
+    conda install -n base -y -c conda-forge mamba \
+ && mamba install -n base -y -c adrianom -c conda-forge --strict-channel-priority robustraster==0.4.1 \
+ && conda clean -afy
 
-# Set the working directory in the container
-WORKDIR /app
-
-# Copy the requirements-lock.txt file to the /app/src directory
-#COPY requirements-lock.txt /app
-#COPY setup.py /app
-
-# Copy your source code to a temporary location first
-#COPY ./src /app/src
-
-# Install the Python package as an editable package
-#RUN pip install --no-cache-dir -e /app
-
-RUN pip install robustraster==0.1.3
+#USER dask
