@@ -78,6 +78,25 @@ class VectorExportProcessor:
             f.write(buffer.read())
 
         print(f"[robustraster] Exported CSV to GCS: {gcs_path}")
+    
+    def _export_parquet_to_gcs(self, df_output):
+        """Export dataset chunk to Google Cloud Storage as a COG."""
+        gcs_credentials = self.kwargs.get('gcs_credentials', None) 
+        fs = gcsfs.GCSFileSystem(token=gcs_credentials)
+
+        # Compose full GCS path
+        gcs_path = posixpath.join(self._gcs_prefix, f"{self._output_basename}.parquet")
+
+        # Create in-memory CSV
+        buffer = io.StringIO()
+        df_output.to_parquet(buffer, index=False, engine="pyarrow")
+        buffer.seek(0)
+
+        # Upload to GCS
+        with fs.open(gcs_path, "w") as f:
+            f.write(buffer.read())
+
+        print(f"[robustraster] Exported parquet to GCS: {gcs_path}")
 
     def _format_dataset(self, ds, ds_output):
         # Format dataset by renaming, transposing, and ensuring CRS.
@@ -110,8 +129,6 @@ class VectorExportProcessor:
         df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
         df_output = df_output.set_index(list(ds.dims))
         ds_output = df_output.to_xarray()
-        
-        #ds_transposed = self._format_dataset(ds, ds_output)
 
         for i, time_val in enumerate(ds_output[self._first_dim].values):
             self._time_value = time_val
@@ -124,6 +141,39 @@ class VectorExportProcessor:
                 os.makedirs(output_folder, exist_ok=True)
                 output_path = os.path.join(output_folder, f"{self._output_basename}.csv")
                 df_output.to_csv(output_path)
+        
+        return ds_output
+    
+    def _user_function_export_parquet_wrapper(self, ds, *args):
+        """
+        Wrapper function that applies either `tune_user_function` or `apply_user_function`.
+        to the user's dataset. This will convert the user's dataset to a pandas DataFrame
+        first before running the user's function.
+        
+        Parameters:
+        - user_func: the user-defined function to apply.
+        - args: positional arguments to pass to the function.
+        - kwargs: keyword arguments to pass to the function.
+        
+        Returns:
+        - result: the result of applying the function to the dataframe.
+        """
+        df_input = ds.to_dataframe().reset_index()
+        df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
+        df_output = df_output.set_index(list(ds.dims))
+        ds_output = df_output.to_xarray()
+
+        for i, time_val in enumerate(ds_output[self._first_dim].values):
+            self._time_value = time_val
+            slice_2d = ds_output.isel({self._first_dim: i})
+            self._output_basename = self._create_output_basename(slice_2d)
+            if self.kwargs.get('export_to_gcs'):
+                self._export_parquet_to_gcs(df_output)
+            else:
+                output_folder = self.kwargs.get('output_folder', 'tiles')
+                os.makedirs(output_folder, exist_ok=True)
+                output_path = os.path.join(output_folder, f"{self._output_basename}.parquet")
+                df_output.to_parquet(output_path, index=False, engine="pyarrow") #coulf also use fastparquet
         
         return ds_output
     
@@ -149,6 +199,12 @@ class VectorExportProcessor:
 
         if self.kwargs.get("file_format") == "CSV":
             result = xr.map_blocks(self._user_function_export_csv_wrapper,
+                                    ds,
+                                    template=template_xarray)
+            result.compute()
+
+        if self.kwargs.get("file_format") == "parquet":
+            result = xr.map_blocks(self._user_function_export_parquet_wrapper,
                                     ds,
                                     template=template_xarray)
             result.compute()

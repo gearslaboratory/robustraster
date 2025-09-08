@@ -321,6 +321,37 @@ class UserFunctionHandler:
             ds = ds.chunk(chunk_dict)
             return ds
 
+    def _infer_output_structure(self, ds):
+        import numpy as np, dask.array as da, xarray as xr
+        # Example: output has dims ('y','x','obs') with fixed obs_len
+        
+        index, y, x = ds.sizes["time"], ds.sizes["Y"], ds.sizes["X"]
+
+        test = xr.Dataset({
+            "X":   (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
+            "Y":   (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
+            "SR_B4": (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
+            "SR_B5": (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
+            "ndvi": (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
+        })
+        
+        return test
+    
+    
+    def _generate_template_xarray(self, ds):
+        processed_chunk = self._infer_output_structure(ds)
+        template_vars = {}
+        for var in processed_chunk.data_vars:
+            dims   = processed_chunk[var].dims
+            dtype  = processed_chunk[var].dtype
+            shape  = tuple(ds.sizes[d] if d in ds.dims else processed_chunk.sizes[d] for d in dims)
+            chunks = tuple(ds.chunks[d] if d in ds.dims else processed_chunk[var].data.chunksize[dims.index(d)] for d in dims)
+            chunks = tuple(c if isinstance(c, tuple) else (c,) for c in chunks)
+
+            template_vars[var] = (dims, da.empty(shape, chunks=chunks, dtype=dtype))
+        sample = xr.Dataset(template_vars, coords=ds.coords, attrs=ds.attrs)
+        return xr.Dataset(template_vars, coords=ds.coords, attrs=ds.attrs)
+    '''
     def _generate_template_xarray(self, ds):
         # Dynamically determine dimension names
         dim_names = list(ds.sizes.keys())
@@ -359,7 +390,7 @@ class UserFunctionHandler:
         )
         
         return template
-    
+    '''
     def _user_function_wrapper(self, ds, *args):
         """
         Wrapper function that applies either `tune_user_function` or `apply_user_function`.
