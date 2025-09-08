@@ -321,7 +321,52 @@ class UserFunctionHandler:
             ds = ds.chunk(chunk_dict)
             return ds
 
+    def _infer_output_structure(self, ds):
+        import numpy as np, dask.array as da, xarray as xr
+        # Example: output has dims ('y','x','obs') with fixed obs_len
+        obs_len = 256  # choose your fixed per-block length
+        y, x = ds.sizes["Y"], ds.sizes["X"]
+
+        return xr.Dataset({
+            "pixel_x":   (("Y","X"), da.empty((y, x), chunks=(ds.chunks['Y'], ds.chunks['X']), dtype=np.float64)),
+            "pixel_y":   (("Y","X"), da.empty((y, x), chunks=(ds.chunks['Y'], ds.chunks['X']), dtype=np.float64)),
+            "tree_x":    (("Y","X"), da.empty((y, x), chunks=(ds.chunks['Y'], ds.chunks['X']), dtype=np.float64)),
+            "tree_y":    (("Y","X"), da.empty((y, x), chunks=(ds.chunks['Y'], ds.chunks['X']), dtype=np.float64)),
+            "SPD":       (("Y","X"), da.empty((y, x), chunks=(ds.chunks['Y'], ds.chunks['X']), dtype=object)),
+            "DIA":       (("Y","X"), da.empty((y, x), chunks=(ds.chunks['Y'], ds.chunks['X']), dtype=np.float64)),
+            "HT":        (("Y","X"), da.empty((y, x), chunks=(ds.chunks['Y'], ds.chunks['X']), dtype=np.float64)),
+            "n_trees_mu":(("Y","X"), da.empty((y, x), chunks=(ds.chunks['Y'], ds.chunks['X']), dtype=np.float64)),
+            "n_trees_sd":(("Y","X"), da.empty((y, x), chunks=(ds.chunks['Y'], ds.chunks['X']), dtype=np.float64)),
+        })
+
+        return xr.Dataset({
+            "pixel_x":   (("Y","X","obs"), da.empty((y, x, obs_len), chunks=(ds.chunks['Y'], ds.chunks['X'], (obs_len,)), dtype=np.float64)),
+            "pixel_y":   (("Y","X","obs"), da.empty((y, x, obs_len), chunks=(ds.chunks['Y'], ds.chunks['X'], (obs_len,)), dtype=np.float64)),
+            "tree_x":    (("Y","X","obs"), da.empty((y, x, obs_len), chunks=(ds.chunks['Y'], ds.chunks['X'], (obs_len,)), dtype=np.float64)),
+            "tree_y":    (("Y","X","obs"), da.empty((y, x, obs_len), chunks=(ds.chunks['Y'], ds.chunks['X'], (obs_len,)), dtype=np.float64)),
+            "SPD":       (("Y","X","obs"), da.empty((y, x, obs_len), chunks=(ds.chunks['Y'], ds.chunks['X'], (obs_len,)), dtype=object)),
+            "DIA":       (("Y","X","obs"), da.empty((y, x, obs_len), chunks=(ds.chunks['Y'], ds.chunks['X'], (obs_len,)), dtype=np.float64)),
+            "HT":        (("Y","X","obs"), da.empty((y, x, obs_len), chunks=(ds.chunks['Y'], ds.chunks['X'], (obs_len,)), dtype=np.float64)),
+            "n_trees_mu":(("Y","X","obs"), da.empty((y, x, obs_len), chunks=(ds.chunks['Y'], ds.chunks['X'], (obs_len,)), dtype=np.float64)),
+            "n_trees_sd":(("Y","X","obs"), da.empty((y, x, obs_len), chunks=(ds.chunks['Y'], ds.chunks['X'], (obs_len,)), dtype=np.float64)),
+        })
+    
     def _generate_template_xarray(self, ds):
+        processed_chunk = self._infer_output_structure(ds)
+        template_vars = {}
+        for var in processed_chunk.data_vars:
+            dims   = processed_chunk[var].dims
+            dtype  = processed_chunk[var].dtype
+            shape  = tuple(ds.sizes[d] if d in ds.dims else processed_chunk.sizes[d] for d in dims)
+            chunks = tuple(ds.chunks[d] if d in ds.dims else processed_chunk[var].data.chunksize[dims.index(d)] for d in dims)
+            chunks = tuple(c if isinstance(c, tuple) else (c,) for c in chunks)
+
+            template_vars[var] = (dims, da.empty(shape, chunks=chunks, dtype=dtype))
+        sample = xr.Dataset(template_vars, coords=ds.coords, attrs=ds.attrs)
+        print(sample)
+        return xr.Dataset(template_vars, coords=ds.coords, attrs=ds.attrs)
+    
+    '''def _generate_template_xarray(self, ds):
         # Dynamically determine dimension names
         dim_names = list(ds.sizes.keys())
         
@@ -330,7 +375,7 @@ class UserFunctionHandler:
         one_chunk = ds.isel(**one_chunk_slices)
         
         # Apply the processing function to this chunk
-        processed_chunk = self._user_function_wrapper(one_chunk)
+        #processed_chunk = self._user_function_wrapper(one_chunk)
         
         # Create the template using a combination of original data variables and newly created ones
         template_vars = {}
@@ -358,11 +403,13 @@ class UserFunctionHandler:
             attrs=ds.attrs
         )
         
-        return template
-    
+        return template'''
+
+
+
     def _user_function_wrapper(self, ds, *args):
         """
-        Wrapper function that applies either `tune_user_function` or `apply_user_function`.
+        Wrapper function that applies either `tune_user_function` or `#_user_function`.
         to the user's dataset. This will convert the user's dataset to a pandas DataFrame
         first before running the user's function.
         

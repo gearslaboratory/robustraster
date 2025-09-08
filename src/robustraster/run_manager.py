@@ -106,6 +106,19 @@ def run(
             if missing_keys:
                 raise ValueError(f"Missing required GCS export configuration: {', '.join(missing_keys)}")
 
+        # --- NEW: optionally broadcast large objects (e.g., models) ---
+        if "models" in user_function_kwargs:
+            try:
+                # Scatter to all workers once; replace dict with a Future
+                user_function_kwargs["models"] = client.scatter(
+                    user_function_kwargs["models"], broadcast=True
+                )
+                # Small flag so downstream knows to resolve Futures
+                user_function_kwargs["_models_are_futures"] = True
+                print("[robustraster] Broadcasted models to workers.")
+            except Exception as e:
+                print(f"[robustraster] WARNING: could not broadcast models: {e}")
+
         # ========== User Function + Export ==========
         if callable(user_function):
             handler = UserFunctionHandler(

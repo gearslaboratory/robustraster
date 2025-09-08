@@ -9,6 +9,7 @@ import os
 import glob
 import posixpath
 import io
+import pandas as pd
 
 class VectorExportProcessor:
     def __init__(self, user_function_handler=None, **kwargs):
@@ -151,4 +152,5 @@ class VectorExportProcessor:
             result = xr.map_blocks(self._user_function_export_csv_wrapper,
                                     ds,
                                     template=template_xarray)
+            print("Running result.compute() in vector_export_manager.py...")
             result.compute()
