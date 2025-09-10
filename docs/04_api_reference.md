@@ -38,7 +38,19 @@ This function must:
 
 ---
 
-### 4. `export_params: dict[str, Any]`  
+### 4. `output_template: Union[pd.DataFrame, list]`  
+Dask, depending on the complexity of the user function, may require an
+empty object representing the final output after the computation is called.
+
+This must be provided if the user function changes the size of existing 
+column names. 
+
+- Accept a `pandas.DataFrame` containing just the names of your columns.  
+- Also accepts a list of the column names that will be in the output result.
+
+---
+
+### 5. `export_params: dict[str, Any]`  
 A dictionary of export configuration options.  
 
 Based on the value of `"flag"`:  
@@ -57,7 +69,7 @@ Based on the value of `"flag"`:
 
 ## Optional Parameters
 
-### 5. `dataset_params: dict[str, Any]`  
+### 6. `dataset_params: dict[str, Any]`  
 Required only for Earth Engine datasets. Includes:
 
 - `geometry`: Path to `.geojson`, `.shp`, `.gpkg`, zipped shapefiles, an ee.Geometry() or an ee.FeatureCollection() 
@@ -67,21 +79,21 @@ Required only for Earth Engine datasets. Includes:
 
 ---
 
-### 6. `user_function_args: tuple`  
+### 7. `user_function_args: tuple`  
 Positional arguments to be passed to your user-defined function.  
 Defaults to `()`.
 See Example 3 in [`02_quickstart.md`](./02_quickstart.md) for an example.
 
 ---
 
-### 7. `user_function_kwargs: dict[str, Any]`  
+### 8. `user_function_kwargs: dict[str, Any]`  
 Keyword arguments for your user-defined function.  
 Defaults to `None`.
 See Example 4 in [`02_quickstart.md`](./02_quickstart.md) for an example.
 
 ---
 
-### 8. `preview_dataset: bool`
+### 9. `preview_dataset: bool`
 Set to `True` to display a small preview of the dataset before and after excecuting your function.
 This allows users to inspect the structure and content of the data to ensure it behaves as expected prior to running a full computation.
 Useful for debugging.
@@ -89,21 +101,21 @@ Defaults to `False`.
 
 ---
 
-### 9. `tune_function: bool`  
+### 10. `tune_function: bool`  
 Set to `True` to automatically find an appropriate chunk size for optimized processing.  
 Defaults to `False`.
 See [`05_tuning.md`](./05_tuning.md) for details.
 
 ---
 
-### 10. `max_iterations: int`
+### 11. `max_iterations: int`
 If `tune_function=True`, you can set the amount of times the tuning process iterates to find an optimal chunk size.
 Defaults to `None`.
 See [`05_tuning.md`](./05_tuning.md) for details.
 
 ---
 
-### 11. `dask_mode: str`  
+### 12. `dask_mode: str`  
 Defines how to initialize the Dask cluster.  
 Defaults to `"full"`.
 
@@ -113,7 +125,7 @@ Defaults to `"full"`.
 
 ---
 
-### 12. `dask_kwargs: dict[str, Any]`  
+### 13. `dask_kwargs: dict[str, Any]`  
 Used only when `dask_mode="custom"`.  
 
 Includes:
@@ -124,7 +136,7 @@ Includes:
 
 ---
 
-### 13. `hooks: dict[str, Callable]`  
+### 14. `hooks: dict[str, Callable]`  
 Allows you to inject functions at various stages of the run lifecycle.  
 
 Hook keys include:

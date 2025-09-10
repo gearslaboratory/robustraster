@@ -207,10 +207,12 @@ class RasterExportProcessor:
         chunks = self.kwargs.get('chunks', None)
         ds = self.user_function_handler._create_apply_chunk(data_source.dataset, chunks)
         
+        # Generate template xarray
+        template_xarray = self.user_function_handler._generate_template_xarray(ds)
+
         if self.kwargs.get("export_to_gcs"):
             self._gcs_prefix = self._create_bucket_and_folder(self.kwargs.get("gcs_credentials"), self.kwargs.get("gcs_bucket"), self.kwargs.get("gcs_folder", None))
 
-        template_xarray = self.user_function_handler._generate_template_xarray(ds)
         result = xr.map_blocks(self._user_function_export_wrapper,
                                    ds,
                                    template=template_xarray)

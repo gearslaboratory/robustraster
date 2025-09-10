@@ -4,16 +4,11 @@ import pandas as pd
 from typing import Optional, Callable
 from datetime import datetime
 import json
-import os
-import glob
-from osgeo import gdal
+import numpy as np
 from .dataset_manager import RasterDataset, EarthEngineDataset
 from . import performance_metric_helper as pmh
 
 from dask.distributed import performance_report
-
-from rasterio.io import MemoryFile
-import gcsfs
 
 class UserFunctionHandler:
     '''
@@ -76,13 +71,14 @@ class UserFunctionHandler:
     For more information on what `max_iterations` does, refer to the docstring
     for `tune_user_function`.
     '''
-    def __init__(self, user_function: Callable[[], pd.DataFrame], *args, **kwargs):
+    def __init__(self, user_function: Callable[[], pd.DataFrame], output_template, *args, **kwargs):
         '''
         Instantiate the UserFunctionHandler class.
         '''
 
         # User's function and parameters
         self.user_function = user_function
+        self.output_template = output_template
         self.args = args
         self.kwargs = kwargs
 
@@ -168,7 +164,7 @@ class UserFunctionHandler:
 
         print(f"Optimal chunks written to {file_name}")
         
-    def _get_tuned_xarray(self, ds, ds_slice):
+    def _get_tuned_xarray(self, ds, ds_slice, template_xarray):
         # Check if the current chunk size exceeds the EarthEngineDataset chunk limit.
         if self._max_chunks_limit:
             if self._is_chunk_bigger_than_limit(ds_slice, self._max_chunks_limit):
@@ -184,7 +180,8 @@ class UserFunctionHandler:
             
             test = xr.map_blocks(self._user_function_wrapper, 
                                 ds_slice, 
-                                args=(self.user_function,))
+                                args=(self.user_function,),
+                                template=template_xarray)
 
             # Create a Dask report of the single chunked run
             with performance_report(filename="dask_report.html"):
@@ -320,25 +317,49 @@ class UserFunctionHandler:
             # Chunk the dataset
             ds = ds.chunk(chunk_dict)
             return ds
-
+    
     def _infer_output_structure(self, ds):
-        import numpy as np, dask.array as da, xarray as xr
-        # Example: output has dims ('y','x','obs') with fixed obs_len
-        
-        index, y, x = ds.sizes["time"], ds.sizes["Y"], ds.sizes["X"]
+        """
+        Build a dask-backed xarray.Dataset 'template' whose variables correspond
+        to the user's desired output columns. Each variable has dims from ds
+        (first three dims in order) and uses the sizes/chunks from ds.
+        """
 
-        test = xr.Dataset({
-            "X":   (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
-            "Y":   (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
-            "SR_B4": (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
-            "SR_B5": (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
-            "ndvi": (("time", "X","Y"), da.empty((index, x, y), chunks=(ds.chunks["time"], ds.chunks['X'], ds.chunks['Y']), dtype=np.float64)),
-        })
-        
-        return test
-    
-    
-    def _generate_template_xarray(self, ds):
+        # Handle DataFrame or iterable
+        if isinstance(self.output_template, pd.DataFrame):
+            col_names = list(self.output_template.columns)
+        else:
+            col_names = list(self.output_template)
+
+        if not col_names:
+            raise ValueError("No output columns provided.")
+
+        # Infer first three dimension names programmatically
+        dims = list(ds.dims)
+        if len(dims) < 3:
+            raise ValueError(f"Input ds must have at least 3 dims, got {dims}")
+        dim1, dim2, dim3 = dims[:3]
+
+        # Sizes and chunks
+        size1, size2, size3 = (ds.sizes[dim1], ds.sizes[dim2], ds.sizes[dim3])
+        try:
+            chunks1, chunks2, chunks3 = ds.chunks[dim1], ds.chunks[dim2], ds.chunks[dim3]
+        except Exception:
+            raise ValueError("Input ds must be dask-backed and chunked.")
+
+        # Build data_vars
+        data_vars = {}
+        for name in col_names:
+            data_vars[name] = (
+                (dim1, dim2, dim3),
+                da.empty((size1, size2, size3),
+                        chunks=(chunks1, chunks2, chunks3),
+                        dtype=np.float64)
+            )
+
+        return xr.Dataset(data_vars)#, coords=ds.coords, attrs=ds.attrs)
+
+    def _generate_template_xarray_from_user(self, ds):
         processed_chunk = self._infer_output_structure(ds)
         template_vars = {}
         for var in processed_chunk.data_vars:
@@ -349,10 +370,12 @@ class UserFunctionHandler:
             chunks = tuple(c if isinstance(c, tuple) else (c,) for c in chunks)
 
             template_vars[var] = (dims, da.empty(shape, chunks=chunks, dtype=dtype))
-        sample = xr.Dataset(template_vars, coords=ds.coords, attrs=ds.attrs)
         return xr.Dataset(template_vars, coords=ds.coords, attrs=ds.attrs)
-    '''
-    def _generate_template_xarray(self, ds):
+    
+    # This code auto generates the template by running the user function on the 
+    # smallest possible chunk size.
+    
+    def _autogenerate_template_xarray(self, ds):
         # Dynamically determine dimension names
         dim_names = list(ds.sizes.keys())
         
@@ -390,7 +413,13 @@ class UserFunctionHandler:
         )
         
         return template
-    '''
+    
+    def _generate_template_xarray(self, ds):
+        if self.output_template is not None:
+            return self._generate_template_xarray_from_user(ds)
+        else:
+            return self._autogenerate_template_xarray(ds)
+
     def _user_function_wrapper(self, ds, *args):
         """
         Wrapper function that applies either `tune_user_function` or `apply_user_function`.
@@ -579,8 +608,10 @@ class UserFunctionHandler:
         ds = data_source.dataset
         ds_chunked = self._create_tuning_chunk(ds)
         ds_slice = self._get_starting_slice(ds_chunked)
+
+        template_xarray = self._generate_template_xarray(ds)
         
-        return self._get_tuned_xarray(ds, ds_slice)
+        return self._get_tuned_xarray(ds, ds_slice, template_xarray)
 '''    
     def apply_user_function(self, data_source: RasterDataset | EarthEngineDataset, 
                             chunks: Optional[dict | str] = None):

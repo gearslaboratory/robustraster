@@ -30,6 +30,7 @@ def run(
     dataset_kwargs: dict[str, Any] = None,
     user_function: Callable[[], pd.DataFrame] = None,
     user_function_args: tuple = (),
+    output_template = None,
     user_function_kwargs: dict[str, Any] = None,
     preview_dataset: bool = False,
     tune_function: bool = False,
@@ -110,6 +111,7 @@ def run(
         if callable(user_function):
             handler = UserFunctionHandler(
                 user_function,
+                output_template,
                 *user_function_args,
                 **user_function_kwargs
             )

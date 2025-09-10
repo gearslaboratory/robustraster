@@ -89,7 +89,7 @@ class VectorExportProcessor:
 
         # Create in-memory CSV
         buffer = io.StringIO()
-        df_output.to_parquet(buffer, index=False, engine="pyarrow")
+        df_output.to_parquet(buffer, index=False, engine="fastparquet")
         buffer.seek(0)
 
         # Upload to GCS
@@ -173,7 +173,7 @@ class VectorExportProcessor:
                 output_folder = self.kwargs.get('output_folder', 'tiles')
                 os.makedirs(output_folder, exist_ok=True)
                 output_path = os.path.join(output_folder, f"{self._output_basename}.parquet")
-                df_output.to_parquet(output_path, index=False, engine="pyarrow") #coulf also use fastparquet
+                df_output.to_parquet(output_path, index=False, engine="fastparquet") #could also use pyarrow
         
         return ds_output
     
@@ -192,6 +192,8 @@ class VectorExportProcessor:
         self._first_dim = list(data_source.dataset.dims)[0]
         chunks = self.kwargs.get('chunks', None)
         ds = self.user_function_handler._create_apply_chunk(data_source.dataset, chunks)
+
+        # Generate template xarray
         template_xarray = self.user_function_handler._generate_template_xarray(ds)
 
         if self.kwargs.get("export_to_gcs"):
