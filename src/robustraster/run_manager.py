@@ -11,6 +11,11 @@ import pandas as pd
 import ee
 from typing import Any, Callable, Optional
 
+# top-level imports
+from pathlib import Path
+from joblib import load
+
+
 def DatasetAdapterFactory(source, dataset, dataset_kwargs=None):
     """
     Smart dispatcher:
@@ -23,6 +28,26 @@ def DatasetAdapterFactory(source, dataset, dataset_kwargs=None):
         return RasterDataset(file_path=dataset)
     else:
         raise ValueError("Source must be 'ee' or a file path (str or list of str).")
+
+# add this small helper anywhere near your other helpers
+def prepare_joblib_models(joblib_files, client):
+    """
+    Accepts list[str] or dict[str, str].
+    Returns dict[str, dask.distributed.Future] after broadcasting to workers.
+    """
+    # Normalize to (name, path) pairs
+    if isinstance(joblib_files, dict):
+        items = list(joblib_files.items())
+    else:
+        items = [(Path(p).stem, p) for p in joblib_files]
+
+    scattered = {}
+    for name, path in items:
+        model = load(path)  # load once on the driver
+        fut = client.scatter(model, broadcast=True)  # one copy per worker
+        scattered[name] = fut
+    return scattered
+
 
 def run(
     dataset: str | list[str] | ee.imagecollection.ImageCollection,
@@ -37,6 +62,7 @@ def run(
     export_kwargs: dict[str, Any] = None,
     dask_mode: str = "full",
     dask_kwargs: dict[str, Any] = None,
+    joblib_files: Optional[Union[dict, list]] = None,
     hooks: Optional[dict[str, Callable[..., Any]]] = None,
     # --- NEW ---
     dask_use_docker: bool = False,
@@ -82,6 +108,14 @@ def run(
             cluster_manager.create_cluster(mode=dask_mode, **dask_kwargs)
             client = cluster_manager.get_dask_client
             print(f"[robustraster] Dask cluster started: {client}")
+
+        # ======= JOBLIB CHECK =========
+        scattered_joblib_models = {}
+        if joblib_files:
+            scattered_joblib_models = prepare_joblib_models(joblib_files, client)
+            # Merge into user_function_kwargs (don’t clobber user-provided keys)
+            user_function_kwargs.setdefault("joblib_models", scattered_joblib_models)
+            print(user_function_kwargs)
 
         # Earth Engine Dask auth
         if source == 'ee':
