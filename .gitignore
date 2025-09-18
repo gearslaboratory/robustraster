@@ -47,3 +47,8 @@ geometry/Plumas_National_forest_3310.qpj
 geometry/Plumas_National_forest_3310.shp
 geometry/Plumas_National_forest_3310.shx
 src/robustraster/__pycache__/export_manager.cpython-310.pyc
+geometry/US.shx
+geometry/US.shp
+geometry/US.prj
+geometry/US.dbf
+geometry/US.cpg

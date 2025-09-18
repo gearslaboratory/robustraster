@@ -71,7 +71,8 @@ class UserFunctionHandler:
     For more information on what `max_iterations` does, refer to the docstring
     for `tune_user_function`.
     '''
-    def __init__(self, user_function: Callable[[], pd.DataFrame], output_template, *args, **kwargs):
+    def __init__(self, user_function: Callable[[], pd.DataFrame], output_template, chunks, 
+                 max_iterations: Optional[int] = None, *args, **kwargs):
         '''
         Instantiate the UserFunctionHandler class.
         '''
@@ -79,6 +80,8 @@ class UserFunctionHandler:
         # User's function and parameters
         self.user_function = user_function
         self.output_template = output_template
+        self.chunks = chunks
+        self.max_iterations = max_iterations
         self.args = args
         self.kwargs = kwargs
 
@@ -87,7 +90,6 @@ class UserFunctionHandler:
         self._max_chunks_limit = None
 
         # Initialize iteration count and count for small differences
-        self.max_iterations = None
         self._iteration_count = 0
         self._small_diff_count = 0
     
@@ -279,7 +281,7 @@ class UserFunctionHandler:
         new_ds_slice = ds.isel(slices)
         return new_ds_slice
 
-    def _create_apply_chunk(self, ds, chunks=None):
+    def _create_apply_chunk(self, ds):
         '''
         After running `tune_user_function` to obtain an optimal chunk size, chunk
         the user's dataset using this obtained chunk size in preparation to run 
@@ -288,14 +290,14 @@ class UserFunctionHandler:
         or provide a default chunk size.
         '''
         # If the user passed in the JSON created from `tune_user_function`...
-        if isinstance(chunks, str):
-            with open(chunks, 'r') as file:
+        if isinstance(self.chunks, str):
+            with open(self.chunks, 'r') as file:
                 chunks_data = json.load(file)
             ds = ds.chunk(chunks_data)
             return ds
         # If the user passed in a custom chunk size as a dictionary...
-        elif isinstance(chunks, dict):
-            ds = ds.chunk(chunks)
+        elif isinstance(self.chunks, dict):
+            ds = ds.chunk(self.chunks)
             return ds
         # If the user passed in None and ran `tune_user_function`...
         elif self._tuned_chunk_size:
@@ -311,7 +313,7 @@ class UserFunctionHandler:
         elif ds.chunks:
             return ds
         else:
-            safe_chunks = (48, 512, 256)
+            safe_chunks = (48, 512, 256)#(1, 1024, 2048)
             # Create a dictionary mapping dimension names to chunk sizes
             chunk_dict = {dim: size for dim, size in zip(ds.dims, safe_chunks)}
             # Chunk the dataset
@@ -448,8 +450,7 @@ class UserFunctionHandler:
         ds_output = df_output.to_xarray()
         return ds_output
         
-    def tune_user_function(self, data_source: RasterDataset | EarthEngineDataset, 
-                           max_iterations: Optional[int] = None):
+    def tune_user_function(self, data_source: RasterDataset | EarthEngineDataset):
         """
         Taking in the user's dataset object and their custom function, tune the 
         function to fit within the constraints of the user's computational infrastructure.
@@ -599,9 +600,6 @@ class UserFunctionHandler:
         # from an online repo (like Google Earth Engine, for example). If it is, some
         # online data catalogs have a data quota that this code accounts for.
         self._max_chunks_limit = getattr(data_source, 'get_max_chunks_limit', None)
-
-        # Set the maximum number of times the tuning code can iterate over the data.
-        self.max_iterations = max_iterations
 
         # Create a single chunk that's the size of the dataset. Then pull a slice of size 1
         # from the chunk to use for testing.

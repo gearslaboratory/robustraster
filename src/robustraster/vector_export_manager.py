@@ -9,6 +9,7 @@ import os
 import glob
 import posixpath
 import io
+from dask.distributed import performance_report
 
 class VectorExportProcessor:
     def __init__(self, user_function_handler=None, **kwargs):
@@ -190,8 +191,7 @@ class VectorExportProcessor:
             raise ValueError("The provided function must be callable.")
 
         self._first_dim = list(data_source.dataset.dims)[0]
-        chunks = self.kwargs.get('chunks', None)
-        ds = self.user_function_handler._create_apply_chunk(data_source.dataset, chunks)
+        ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
 
         # Generate template xarray
         template_xarray = self.user_function_handler._generate_template_xarray(ds)
@@ -203,10 +203,19 @@ class VectorExportProcessor:
             result = xr.map_blocks(self._user_function_export_csv_wrapper,
                                     ds,
                                     template=template_xarray)
-            result.compute()
+            if self.kwargs.get("report") is True:
+                with performance_report(filename="dask_report.html"):
+                    result.compute()
+            else:
+                result.compute()
+
 
         if self.kwargs.get("file_format") == "parquet":
             result = xr.map_blocks(self._user_function_export_parquet_wrapper,
                                     ds,
                                     template=template_xarray)
-            result.compute()
+            if self.kwargs.get("report") is True:
+                with performance_report(filename="dask_report.html"):
+                    result.compute()
+            else:
+                result.compute()

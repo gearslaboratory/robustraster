@@ -9,7 +9,7 @@ from .hooks import preview_dataset_hook
 
 import pandas as pd
 import ee
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 def DatasetAdapterFactory(source, dataset, dataset_kwargs=None):
     """
@@ -30,10 +30,11 @@ def run(
     dataset_kwargs: dict[str, Any] = None,
     user_function: Callable[[], pd.DataFrame] = None,
     user_function_args: tuple = (),
-    output_template = None,
     user_function_kwargs: dict[str, Any] = None,
+    output_template = None,
     preview_dataset: bool = False,
     tune_function: bool = False,
+    chunks: Optional[Union[dict, str]] = None,
     max_iterations: int = None,
     export_kwargs: dict[str, Any] = None,
     dask_mode: str = "full",
@@ -112,6 +113,8 @@ def run(
             handler = UserFunctionHandler(
                 user_function,
                 output_template,
+                chunks,
+                max_iterations,
                 *user_function_args,
                 **user_function_kwargs
             )
@@ -119,7 +122,7 @@ def run(
             # Run tuning if requested
             if tune_function or max_iterations:
                 print("[robustraster] Tuning user function...")
-                handler.tune_user_function(data_source, max_iterations)
+                handler.tune_user_function(data_source)
 
             if "mode" not in export_kwargs:
                 raise ValueError("Missing required export configuration: 'mode'")
