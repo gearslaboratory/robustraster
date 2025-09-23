@@ -192,6 +192,33 @@ class RasterExportProcessor:
 
         print(f"Exported to GCS: {gcs_path} with bands {list(stacked.band.values)}")
 
+    def _user_function_export_xarray_wrapper(self, ds, *args):
+        """
+        Wrapper function that applies either `tune_user_function` or `apply_user_function`.
+        to the user's dataset. This will convert the user's dataset to a pandas DataFrame
+        first before running the user's function.
+        
+        Parameters:
+        - user_func: the user-defined function to apply.
+        - args: positional arguments to pass to the function.
+        - kwargs: keyword arguments to pass to the function.
+        
+        Returns:
+        - result: the result of applying the function to the dataframe.
+        """
+        
+        ds_output = self.user_function_handler.user_function(ds, *self.user_function_handler.args, **self.user_function_handler.kwargs)
+        
+        ds_transposed = self._format_dataset(ds, ds_output)
+
+        for i, time_val in enumerate(ds_transposed[self._first_dim].values):
+            self._time_value = time_val
+            slice_2d = ds_transposed.isel({self._first_dim: i})
+            self._output_basename = self._create_output_basename(slice_2d)
+            self._compute_chunks_and_export(slice_2d)
+        
+        return ds_output
+    
     def run_and_export_results(self, data_source: RasterDataset | EarthEngineDataset):
         # Keyword arguments:
         # flag: str
@@ -205,23 +232,23 @@ class RasterExportProcessor:
             raise ValueError("The provided function must be callable.")
 
         self._first_dim = list(data_source.dataset.dims)[0]
-        #ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
-        ds = data_source.dataset
+        ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
+        
         # Generate template xarray
         template_xarray = self.user_function_handler._generate_template_xarray(ds)
 
         if self.kwargs.get("export_to_gcs"):
             self._gcs_prefix = self._create_bucket_and_folder(self.kwargs.get("gcs_credentials"), self.kwargs.get("gcs_bucket"), self.kwargs.get("gcs_folder", None))
 
-        result = xr.map_blocks(self._user_function_export_wrapper,
+        result = xr.map_blocks(self._user_function_export_xarray_wrapper,
                                    ds,
                                    template=template_xarray)
         
         if self.kwargs.get("report") is True:
             with performance_report(filename="dask_report.html"):
-                result.compute()
+                result.persist()
         else:
-            result.compute()
+            result.persist()
 
         if self.kwargs.get('vrt'):
             self.export_vrt(data_source)
