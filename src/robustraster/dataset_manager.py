@@ -1,3 +1,11 @@
+from __future__ import annotations
+from pathlib import Path
+from typing import Sequence, Mapping, Optional
+import pandas as pd
+import xarray as xr
+import rioxarray as rxr
+
+
 from abc import ABC, abstractmethod
 import xarray as xr
 import rasterio
@@ -47,7 +55,7 @@ class RasterDataset(DataReaderInterface):
     >>> raster_path_list = ['./raster1.tif', './raster2.tif']
     >>> local_raster = input_driver.RasterDataset(raster_path_list)
     """
-    def __init__(self, file_path: str) -> None:
+    def __init__(self, file_path: str, dataset_kwargs: dict) -> None:
         """
         Initialize a RasterDataset instance.
 
@@ -58,7 +66,8 @@ class RasterDataset(DataReaderInterface):
         >>> reader = RasterDataset("/path/to/raster.tif")
         """
         self._file_path = file_path
-        self._xarray_data = self._read_data()
+        self._xarray_data = self._read_data(dataset_kwargs)
+       # self._xarray_data = self._read_timeseries_geotiffs_to_dataset(dataset_kwargs)
     
     @property
     def dataset(self):
@@ -71,65 +80,371 @@ class RasterDataset(DataReaderInterface):
         >>> print(dataset)
         """
         return self._xarray_data
-    
-    def _read_data(self) -> xr.Dataset:
-        """
-        Open the raster data and store it into an xarray object.
 
-        Returns:
-        - xr.Dataset: An xarray Dataset of the raster object.
+    def _read_data(self, dataset_kwargs=None) -> xr.Dataset:
         """
-        # Ensure raster_paths is a list, even if a single string is passed
+        Read one or many rasters and return an xarray.Dataset with variables on (time, X, Y).
+
+        dataset_kwargs (optional):
+        - chunks: dict, e.g. {"X": 1024, "Y": 1024}
+        - time_dim: str, default "time"
+        - timestamps: list-like or callable(path)->(int|str|np.datetime64)
+        - template: xr.Dataset/xr.DataArray or path; if given, reproject to match
+        - resampling: str, rasterio resampling name, default "nearest"
+        - band_names: {int: str} mapping (1-based band index -> var name)
+        - copy_attrs_from_template: bool, default True
+        - prefer_desc_over_bandnames: bool, default True
+        """
+        import re
+        import numpy as np
+        import xarray as xr
+        import rasterio
+        import rioxarray as rxr
+
+        dataset_kwargs = dataset_kwargs or {}
+
+        # Inputs -> list
+        raster_paths = [self._file_path] if isinstance(self._file_path, str) else list(self._file_path)
+        if not raster_paths:
+            raise ValueError("No raster paths were provided.")
+
+        # Config
+        chunks = dataset_kwargs.get("chunks", {})
+        CHUNK_X = int(chunks.get("X", 1024))
+        CHUNK_Y = int(chunks.get("Y", 1024))
+        time_dim = dataset_kwargs.get("time_dim", "time")
+        resampling = dataset_kwargs.get("resampling", "nearest")
+        band_names_override = dataset_kwargs.get("band_names", {})
+        prefer_desc = bool(dataset_kwargs.get("prefer_desc_over_bandnames", True))
+        copy_attrs = bool(dataset_kwargs.get("copy_attrs_from_template", True))
+
+        # --------------------------
+        # Build timestamps / indices
+        # --------------------------
+        timestamps_arg = dataset_kwargs.get("timestamps", None)
+
+        def _guess_timestamp_from_name(fp: str):
+            for pat in [
+                r"(?P<y>\d{4})(?P<m>\d{2})(?P<d>\d{2})",
+                r"(?P<y>\d{4})[-_](?P<m>\d{2})[-_](?P<d>\d{2})",
+            ]:
+                m = re.search(pat, fp)
+                if m:
+                    return f"{int(m['y']):04d}-{int(m['m']):02d}-{int(m['d']):02d}"
+            return None
+
+        if callable(timestamps_arg):
+            ts_list = [timestamps_arg(fp) for fp in raster_paths]
+        elif timestamps_arg is not None:
+            if len(timestamps_arg) != len(raster_paths):
+                raise ValueError("Length of 'timestamps' does not match number of rasters.")
+            ts_list = list(timestamps_arg)
+        else:
+            guessed = [_guess_timestamp_from_name(fp) for fp in raster_paths]
+            if all(g is not None for g in guessed):
+                ts_list = guessed  # strings like "YYYY-MM-DD"
+            else:
+                # fallback to simple integer indices [0..N-1]
+                ts_list = list(range(len(raster_paths)))
+
+        # Decide time kind: "datetime" (all ISO-like strings or np.datetime64),
+        # "int" (all ints), or "str" (mixed/other -> keep as strings).
+        date_rx = re.compile(r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$")
+        def _is_datetime_like(t):
+            if isinstance(t, np.datetime64):
+                return True
+            if isinstance(t, str) and date_rx.match(t):
+                return True
+            return False
+
+        if all(_is_datetime_like(t) for t in ts_list):
+            time_kind = "datetime"
+            ts_list = [np.datetime64(t) if not isinstance(t, np.datetime64) else t for t in ts_list]
+        elif all(isinstance(t, (int, np.integer)) for t in ts_list):
+            time_kind = "int"
+            ts_list = [int(t) for t in ts_list]
+        else:
+            time_kind = "str"
+            ts_list = [str(t) for t in ts_list]
+
+        # --------------------------
+        # Optional template handling
+        # --------------------------
+        template = dataset_kwargs.get("template", None)
+        ref_da = None
+        if template is not None:
+            if isinstance(template, (xr.DataArray, xr.Dataset)):
+                if isinstance(template, xr.Dataset):
+                    first = list(template.data_vars)[0]
+                    ref_da = template[first].isel({time_dim: 0}) if time_dim in template.dims else template[first]
+                else:
+                    ref_da = template
+            elif isinstance(template, str):
+                try:
+                    ref_da = rxr.open_rasterio(template, masked=True).squeeze()
+                except Exception:
+                    ref_ds = xr.open_dataset(template)
+                    first = list(ref_ds.data_vars)[0]
+                    ref_da = ref_ds[first]
+                    if time_dim in ref_da.dims:
+                        ref_da = ref_da.isel({time_dim: 0})
+            else:
+                raise TypeError("template must be a DataArray, Dataset, or path str")
+
+            # Ensure spatial dims are x/y for rioxarray ops
+            if "X" in ref_da.dims or "Y" in ref_da.dims:
+                ref_da = ref_da.rename({k: {"X": "x", "Y": "y"}.get(k, k) for k in ref_da.dims})
+            try:
+                if getattr(ref_da.rio, "crs", None) is None:
+                    ref_da = ref_da.rio.write_crs(ref_da.attrs.get("crs", None), inplace=False)
+                ref_da = ref_da.rio.set_spatial_dims(x_dim="x", y_dim="y")
+            except Exception:
+                pass
+
+        # --------------------------------
+        # Open one file, align & package
+        # --------------------------------
+        def _open_align_package(fp: str, tstamp) -> xr.Dataset:
+            with rasterio.open(fp) as src:
+                count = src.count
+                descs = tuple(src.descriptions or ())
+                crs = src.crs
+
+            da_or_ds = rxr.open_rasterio(fp, masked=True, chunks={"x": CHUNK_X, "y": CHUNK_Y})
+
+            # Split into per-band variables and drop the scalar 'band' coord (avoid MergeError)
+            if isinstance(da_or_ds, xr.DataArray):
+                if "band" in da_or_ds.dims:
+                    vars_ = {}
+                    for b in range(1, count + 1):
+                        band_da = da_or_ds.sel(band=b)
+                        if "band" in band_da.coords:
+                            band_da = band_da.drop_vars("band")
+                        band_da = band_da.squeeze(drop=True)
+                        vars_[f"band_{b}"] = band_da
+                    ds = xr.Dataset(vars_)
+                else:
+                    ds = xr.Dataset({"band_1": da_or_ds})
+            else:
+                ds = da_or_ds
+                for v in list(ds.data_vars):
+                    if "band" in ds[v].coords:
+                        ds[v] = ds[v].drop_vars("band").squeeze(drop=True)
+
+            # Name bands: overrides > descriptions
+            name_map = {}
+            for b in range(1, count + 1):
+                key = f"band_{b}"
+                if key in ds:
+                    if b in band_names_override:
+                        name_map[key] = str(band_names_override[b])
+                    elif prefer_desc and len(descs) >= b and descs[b - 1]:
+                        name_map[key] = descs[b - 1].strip().replace(" ", "_")
+            if name_map:
+                ds = ds.rename(name_map)
+
+            # Ensure CRS present for rioxarray
+            for v in ds.data_vars:
+                try:
+                    if getattr(ds[v].rio, "crs", None) is None and crs is not None:
+                        ds[v] = ds[v].rio.write_crs(crs, inplace=False)
+                except Exception:
+                    pass
+
+            # Align to template if provided
+            if ref_da is not None:
+                sds = ds.rename({k: {"X": "x", "Y": "y"}.get(k, k) for k in ds.dims})
+                aligned_vars = {v: sds[v].rio.reproject_match(ref_da, resampling=resampling) for v in sds.data_vars}
+                ds = xr.Dataset(aligned_vars)
+
+            # Rename to X/Y and add time (respecting time_kind)
+            rename_dims = {}
+            if "x" in ds.dims: rename_dims["x"] = "X"
+            if "y" in ds.dims: rename_dims["y"] = "Y"
+            if rename_dims:
+                ds = ds.rename(rename_dims)
+
+            if time_kind == "datetime":
+                tval = np.datetime64(tstamp) if not isinstance(tstamp, np.datetime64) else tstamp
+            elif time_kind == "int":
+                tval = int(tstamp)
+            else:  # "str"
+                tval = str(tstamp)
+
+            ds = ds.expand_dims({time_dim: [tval]})
+
+            # Chunk spatial dims
+            for v in ds.data_vars:
+                ds[v] = ds[v].chunk({k: {"X": CHUNK_X, "Y": CHUNK_Y}.get(k, -1) for k in ds[v].dims if k in ("X", "Y")})
+
+            return ds
+
+        # Process all files
+        per_time = []
+        for fp, ts in zip(raster_paths, ts_list):
+            try:
+                per_time.append(_open_align_package(fp, ts))
+            except rasterio.errors.RasterioIOError as e:
+                raise RuntimeError(f"Failed to read raster: {fp}") from e
+
+        # Defensive cleanup: purge any stray 'band' coords before concat
+        for i in range(len(per_time)):
+            for v in per_time[i].data_vars:
+                if "band" in per_time[i][v].coords:
+                    per_time[i][v] = per_time[i][v].drop_vars("band").squeeze(drop=True)
+
+        combined = xr.concat(per_time, dim=time_dim)
+
+        # Sort if sortable (datetime or int)
+        dtype_str = str(combined[time_dim].dtype)
+        if "datetime64" in dtype_str or np.issubdtype(combined[time_dim].dtype, np.integer):
+            combined = combined.sortby(time_dim)
+
+        # Copy a few attrs from template if requested
+        if copy_attrs and ref_da is not None:
+            for key in ("crs", "description"):
+                if key in ref_da.attrs:
+                    combined.attrs[key] = ref_da.attrs[key]
+
+        # Synthesize X/Y coords if missing (from affine)
+        for coord_dim in ("X", "Y"):
+            if coord_dim not in combined.coords and coord_dim in combined.dims:
+                sample = combined[list(combined.data_vars)[0]]
+                try:
+                    transform = sample.rio.transform()
+                    ny, nx = sample.sizes["Y"], sample.sizes["X"]
+                    xs = np.arange(nx) * transform.a + transform.c + transform.a / 2.0
+                    ys = np.arange(ny) * transform.e + transform.f + transform.e / 2.0
+                    combined = combined.assign_coords(X=("X", xs), Y=("Y", ys))
+                except Exception:
+                    pass
+
+        return combined
+
+
+
+
+    def _read_timeseries_geotiffs_to_dataset(self,
+                                             dataset_kwargs,
+    ) -> xr.Dataset:
+        """
+        Build an xarray.Dataset with dims (time, X, Y); each band becomes a data variable.
+        - files: list of GeoTIFFs (one per time). Multiband files are fine.
+        - times: same length as files; if None, uses file stems (parsed by pandas.to_datetime).
+        - band_names: names for each band in a single file, in band order (1-based).
+                    If None, names will be like 'band_1', 'band_2', ...
+        - chunks: desired Dask chunks for {"time","X","Y"} after assembly.
+        """
         if isinstance(self._file_path, str):
             raster_paths = [self._file_path]
         else:
             raster_paths = self._file_path
-        datasets = []
-    
-        for i, raster_path in enumerate(raster_paths):
+        
+        times = dataset_kwargs.get("times")
+        band_names = dataset_kwargs.get("band_names")
+        chunks = dataset_kwargs.get("chunks")
+        mask_and_scale = True
+
+        files = [Path(f) for f in raster_paths]
+        # Resolve times
+        if times is None:
+            # Try to parse a timestamp out of each filename; fall back to order index.
+            parsed = []
+            for f in files:
+                try:
+                    parsed.append(pd.to_datetime(f.stem))
+                except Exception:
+                    parsed.append(None)
+            if any(t is None for t in parsed):
+                times = pd.to_datetime(range(len(files)), unit="D", origin="unix")  # dummy monotonic
+            else:
+                times = parsed
+        times = pd.to_datetime(times)  # ensure ns-resolution
+
+        # To keep IO lazy but allow dask chunking, pass chunks to open_rasterio
+        # We'll chunk band=1 (read bands individually) and pass spatial chunk hints
+        spatial_chunks = {}
+        if chunks:
+            if "X" in chunks: spatial_chunks["x"] = chunks["X"]
+            if "Y" in chunks: spatial_chunks["y"] = chunks["Y"]
+        open_chunks = {"band": 1, **spatial_chunks} if spatial_chunks else {"band": 1}
+
+        # Read first file to discover band count, x/y coords, CRS; use it to validate names
+        ref = rxr.open_rasterio(files[0], chunks=open_chunks, mask_and_scale=mask_and_scale)
+        ref = ref.rename({"x": "X", "y": "Y"})
+        n_bands = ref.sizes.get("band", 1)
+        if band_names is None:
+            band_names = [f"band_{i}" for i in range(1, n_bands + 1)]
+        if len(band_names) != n_bands:
+            raise ValueError(f"band_names length {len(band_names)} != bands in file {n_bands}")
+
+        # Some rasters have Y descending; sort so Y asc like in your example
+        if ref.indexes["Y"][0] > ref.indexes["Y"][-1]:
+            ref = ref.sortby("Y")
+
+        # Build one Dataset per file: split bands into variables, add singleton time
+        def _dataset_from_file(path, tstamp) -> xr.Dataset:
+            da = rxr.open_rasterio(path, chunks=open_chunks, mask_and_scale=mask_and_scale)
+            da = da.rename({"x": "X", "y": "Y"})
+            if da.indexes["Y"][0] > da.indexes["Y"][-1]:
+                da = da.sortby("Y")
+
+            # Ensure (band, Y, X)
+            # Split into variables
+            vars_dict = {}
+            for i, name in enumerate(band_names, start=1):
+                v = da.sel(band=i).drop_vars("band", errors="ignore")
+                # add singleton time
+                v = v.expand_dims(time=[pd.to_datetime(tstamp)])
+                # ensure dtype is float32 to match your example (optional)
+                if v.dtype.kind in {"i", "u"}:
+                    v = v.astype("float32")
+                vars_dict[name] = v
+
+            ds = xr.Dataset(vars_dict)
+
+            # Carry crucial metadata
+            crs = getattr(da.rio, "crs", None)
+            if crs is not None:
+                ds = ds.assign_attrs(crs=str(crs))
+            # GeoTransform / resolution as helpful attrs
             try:
-                # Step 1: Extract band descriptions with rasterio
-                with rasterio.open(raster_path) as src:
-                    descriptions = src.descriptions  # Tuple of band names, can be None
+                res_x, res_y = da.rio.resolution()
+                ds = ds.assign_attrs(resolution=(float(res_x), float(res_y)))
+            except Exception:
+                pass
 
-                # Step 2: Load with rioxarray
-                with rioxarray.open_rasterio(raster_path, band_as_variable=True) as xarray_data:
-                    # Add a new "time" dimension
-                    xarray_data = xarray_data.expand_dims(index=[i + 1])  # 1-based index
+            print(ds)
 
-                    # Step 3: Rename bands if descriptions are available and valid
-                    if descriptions and all(desc is not None for desc in descriptions):
-                        rename_dict = {f"band_{j+1}": desc for j, desc in enumerate(descriptions)}
-                        xarray_data = xarray_data.rename(rename_dict)
+            return ds
 
-                    # Dynamically get the dimensions
-                    dim_names = list(xarray_data.dims)
+        parts = [_dataset_from_file(f, t) for f, t in zip(files, times)]
+        # Concatenate over time
+        ds = xr.concat(parts, dim="time")
 
-                    # Initialize chunk sizes with 'time' set to 48
-                    chunk_sizes = {dim_names[0]: 48}
+        # Rechunk to final shape
+        if chunks:
+            # Validate keys; default to "auto" for any missing piece
+            final_chunks = {
+                "time": chunks.get("time", "auto"),
+                "X": chunks.get("X", "auto"),
+                "Y": chunks.get("Y", "auto"),
+            }
+            ds = ds.chunk(final_chunks)
 
-                    # Set chunk sizes for the other dimensions
-                    if len(dim_names) >= 2:
-                        chunk_sizes[dim_names[1]] = 512
-                    if len(dim_names) >= 3:
-                        chunk_sizes[dim_names[2]] = 256
+        # Optional: ensure coordinate dtypes and ordering closely match your example
+        ds = ds.assign_coords(
+            time=pd.to_datetime(ds["time"].values),
+            X=ds["X"].astype("float64"),
+            Y=ds["Y"].astype("float64"),
+        )
 
-                    # Apply chunking
-                    chunked_data = xarray_data.chunk(chunk_sizes)
+        # Keep attrs when manipulating downstream
+        xr.set_options(keep_attrs=True)
 
-                    datasets.append(chunked_data)
-
-            except rasterio.errors.RasterioIOError as e:
-                print(f"Error reading raster data from {raster_path}: {e}")
-                raise
-
-        # Combine all datasets along a dimension I am naming "index"
-        combined_dataset = xr.concat(datasets, dim="index")
-        #if 'spatial_ref' in combined_dataset.coords:
-        #    combined_dataset = combined_dataset.drop_vars('spatial_ref')
+        return ds
 
 
-        return combined_dataset
 
 class EarthEngineDataset(DataReaderInterface):
     """

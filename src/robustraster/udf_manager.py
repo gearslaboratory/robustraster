@@ -1,7 +1,7 @@
 import xarray as xr
 import dask.array as da
 import pandas as pd
-from typing import Optional, Callable
+from typing import Optional, Callable, Tuple, Any, Dict
 from datetime import datetime
 import json
 import numpy as np
@@ -71,19 +71,20 @@ class UserFunctionHandler:
     For more information on what `max_iterations` does, refer to the docstring
     for `tune_user_function`.
     '''
-    def __init__(self, user_function: Callable[[], pd.DataFrame], output_template, chunks, 
-                 max_iterations: Optional[int] = None, *args, **kwargs):
+    def __init__(self, user_function: Callable[[], pd.DataFrame], *, max_iterations: Optional[int] = None, 
+                 output_template = None, chunks = None, user_function_args: Tuple[Any, ...] = (), 
+                 user_function_kwargs: Optional[Dict[str, Any]] = None):
         '''
         Instantiate the UserFunctionHandler class.
         '''
 
         # User's function and parameters
         self.user_function = user_function
+        self.max_iterations = max_iterations
         self.output_template = output_template
         self.chunks = chunks
-        self.max_iterations = max_iterations
-        self.args = args
-        self.kwargs = kwargs
+        self.args = user_function_args
+        self.kwargs = user_function_kwargs
 
         # Chunk size parameters
         self._tuned_chunk_size = None

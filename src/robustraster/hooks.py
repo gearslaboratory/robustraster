@@ -6,8 +6,10 @@ import xarray as xr
 def preview_dataset_hook(
     dataset: xr.Dataset,
     user_function: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None,
+    *user_function_args,
     preview_dims: int = 10,
     preview_rows: int = 5,
+    **user_function_kwargs,
     
 ):
     """
@@ -28,6 +30,26 @@ def preview_dataset_hook(
 
     # Slice and load a small sample of the dataset
     small_slice = dataset.isel(**isel_kwargs)
+    print(small_slice)
+
+    # Check each data var’s "lazy" array dimensionality and chunking
+    for name, v in small_slice.data_vars.items():
+        print(
+            name, "dims:", v.dims, "shape:", v.shape,
+            "ndim(lazy):", getattr(v.data, "ndim", None),
+            "chunks:", getattr(v.data, "chunks", None)
+        )
+
+    import dask.array as da
+
+    def first_block_shape(da_):
+        # grab one delayed block and compute just that block
+        blk = da_.to_delayed().ravel()[0].compute()
+        return blk.shape
+
+    for name in ["band_1","band_2"]:
+        print(name, "first-block-shape:", first_block_shape(small_slice[name].data))
+
     eager_data = small_slice.load()
 
     # Convert to DataFrame
@@ -39,7 +61,7 @@ def preview_dataset_hook(
     # Optionally apply the user function
     if user_function:
         try:
-            df_with_output = user_function(df_preview)
+            df_with_output = user_function(df_preview, *user_function_args, **user_function_kwargs)
             print("\nUser function output preview:")
             print(df_with_output.head(preview_rows))
         except Exception as e:

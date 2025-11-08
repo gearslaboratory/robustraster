@@ -205,8 +205,8 @@ class RasterExportProcessor:
             raise ValueError("The provided function must be callable.")
 
         self._first_dim = list(data_source.dataset.dims)[0]
-        #ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
-        ds = data_source.dataset
+        ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
+        #ds = data_source.dataset
         # Generate template xarray
         template_xarray = self.user_function_handler._generate_template_xarray(ds)
 

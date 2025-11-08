@@ -20,7 +20,7 @@ def DatasetAdapterFactory(source, dataset, dataset_kwargs=None):
     if source == "ee":
         return EarthEngineDataset(image_collection=dataset, dataset_kwargs=dataset_kwargs)
     elif source == "local":
-        return RasterDataset(file_path=dataset)
+        return RasterDataset(file_path=dataset, dataset_kwargs=dataset_kwargs)
     else:
         raise ValueError("Source must be 'ee' or a file path (str or list of str).")
 
@@ -28,14 +28,12 @@ def run(
     dataset: str | list[str] | ee.imagecollection.ImageCollection,
     source: str,
     dataset_kwargs: dict[str, Any] = None,
-    user_function: Callable[[], pd.DataFrame] = None,
-    user_function_args: tuple = (),
-    user_function_kwargs: dict[str, Any] = None,
-    output_template = None,
+    user_function_params: dict[str, Any] = None,
+    #user_function: Callable[[], pd.DataFrame] = None,
+    #user_function_args: tuple = (),
+    #user_function_kwargs: dict[str, Any] = None,
     preview_dataset: bool = False,
     tune_function: bool = False,
-    chunks: Optional[Union[dict, str]] = None,
-    max_iterations: int = None,
     export_kwargs: dict[str, Any] = None,
     dask_mode: str = "full",
     dask_kwargs: dict[str, Any] = None,
@@ -53,7 +51,10 @@ def run(
     dask_kwargs = dask_kwargs or {}
     dask_docker_kwargs = dask_docker_kwargs or {}
     hooks = hooks or {}
-    user_function_kwargs = user_function_kwargs or {}
+
+    user_function = user_function_params.get("user_function")
+    user_function_args = user_function_params.get("user_function_args")
+    user_function_kwargs = user_function_params.get("user_function_kwargs")
 
     cluster_manager = None
     client = None
@@ -111,16 +112,11 @@ def run(
         # ========== User Function + Export ==========
         if callable(user_function):
             handler = UserFunctionHandler(
-                user_function,
-                output_template,
-                chunks,
-                max_iterations,
-                *user_function_args,
-                **user_function_kwargs
+                **user_function_params
             )
 
             # Run tuning if requested
-            if tune_function or max_iterations:
+            if tune_function:
                 print("[robustraster] Tuning user function...")
                 handler.tune_user_function(data_source)
 
