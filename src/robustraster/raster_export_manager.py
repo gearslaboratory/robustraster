@@ -120,7 +120,7 @@ class RasterExportProcessor:
             self._output_basename = self._create_output_basename(slice_2d)
             self._compute_chunks_and_export(slice_2d)
         
-        return ds_output
+        return ds_transposed
     
     def _format_dataset(self, ds, ds_output):
         # Format dataset by renaming, transposing, and ensuring CRS.
