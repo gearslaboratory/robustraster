@@ -8,7 +8,7 @@ import gcsfs
 import os
 import glob
 import posixpath
-from dask.distributed import performance_report
+from dask.distributed import performance_report, print
 
 class RasterExportProcessor:
     def __init__(self, user_function_handler=None, **kwargs):
@@ -109,18 +109,20 @@ class RasterExportProcessor:
         """
         df_input = ds.to_dataframe().reset_index()
         df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
+        #print(df_output)
         df_output = df_output.set_index(list(ds.dims))
         ds_output = df_output.to_xarray()
         
         ds_transposed = self._format_dataset(ds, ds_output)
 
+        print(ds_transposed)
         for i, time_val in enumerate(ds_transposed[self._first_dim].values):
             self._time_value = time_val
             slice_2d = ds_transposed.isel({self._first_dim: i})
             self._output_basename = self._create_output_basename(slice_2d)
             self._compute_chunks_and_export(slice_2d)
         
-        return ds_transposed
+        return ds
     
     def _format_dataset(self, ds, ds_output):
         # Format dataset by renaming, transposing, and ensuring CRS.
