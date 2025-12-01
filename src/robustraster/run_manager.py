@@ -2,6 +2,7 @@ from .dataset_manager import RasterDataset, EarthEngineDataset
 from .dask_cluster_manager import DaskClusterManager
 from .dask_docker_cluster_manager import DDClusterManager  # NEW: Docker-based cluster manager
 from .raster_export_manager import RasterExportProcessor
+from .raster_export_manager import RasterExportDelayedProcessor
 from .vector_export_manager import VectorExportProcessor
 from .udf_manager import UserFunctionHandler
 from .dask_plugins import EEPlugin

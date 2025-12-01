@@ -10,6 +10,8 @@ import glob
 import posixpath
 from dask.distributed import performance_report, print
 
+from dask import delayed, compute
+
 class RasterExportProcessor:
     def __init__(self, user_function_handler=None, **kwargs):
         """
@@ -122,7 +124,7 @@ class RasterExportProcessor:
             self._output_basename = self._create_output_basename(slice_2d)
             self._compute_chunks_and_export(slice_2d)
         
-        return ds
+        return ds_transposed
     
     def _format_dataset(self, ds, ds_output):
         # Format dataset by renaming, transposing, and ensuring CRS.
@@ -228,6 +230,144 @@ class RasterExportProcessor:
         if self.kwargs.get('vrt'):
             self.export_vrt(data_source)
 
+    def export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
+        for i, time_val in enumerate(data_source.dataset[self._first_dim].values):
+            self._generate_vrt_from_tifs(time_val)
+
+class RasterExportDelayedProcessor:
+    def __init__(self, user_function_handler=None, **kwargs):
+        """
+        Initialize ExportProcessor.
+        - If a UserFunctionHandler instance is provided, use it.
+        - If not, create a new instance.
+        
+        :param user_function_handler: Optional existing UserFunctionHandler object.
+        """
+        self.user_function_handler = user_function_handler
+        self.kwargs = kwargs
+
+        self._first_dim = None
+        self._time_value = None
+        self._output_basename = None
+        self._gcs_prefix = None
+
+    def _user_function_export_wrapper(self, ds_full, idx):
+        """
+        Per-time-step worker.
+
+        - ds_full: full (Dask-backed) Dataset, chunked by user_function_handler
+        - idx: integer index along self._first_dim (e.g. time)
+        """
+
+        # --- 1) Slice this time step lazily ---
+        ds_block = ds_full.isel({self._first_dim: idx})
+        time_val = ds_block[self._first_dim].values  # e.g. numpy.datetime64
+
+        # --- 2) Run user function via DataFrame ---
+        df_input = ds_block.to_dataframe().reset_index()
+        df_output = self.user_function_handler.user_function(
+            df_input,
+            *self.user_function_handler.args,
+            **self.user_function_handler.kwargs,
+        )
+
+        # --- 3) Back to xarray ---
+        df_output = df_output.set_index(list(ds_block.dims))
+        ds_output = df_output.to_xarray()
+
+        # --- 4) Format spatial dims & CRS ---
+        ds_transposed = self._format_dataset(ds_block, ds_output)
+        # ds_transposed has dims (time, y, x, [data_vars]) with time size == 1
+
+        # Single 2D slice for this time
+        slice_2d = ds_transposed.isel({self._first_dim: 0})
+
+        # --- 5) Build multiband stack from all data variables ---
+        # 3D DataArray: (band, y, x)
+        stacked = self._convert_to_multiband(slice_2d)
+
+        # --- 6) Build output path and call to_raster (this triggers compute) ---
+        output_basename = self._create_output_basename(slice_2d, time_val)
+
+        if not self.kwargs.get("export_to_gcs"):
+            output_folder = self.kwargs.get("output_folder", "tiles")
+            os.makedirs(output_folder, exist_ok=True)
+            output_path = os.path.join(output_folder, f"{output_basename}.tif")
+            # Local multi-band GeoTIFF
+            stacked.rio.to_raster(
+                output_path,
+                driver="GTiff",
+                compute=True,  # default, but explicit for clarity
+            )
+            print(f"Exported: {output_path} with bands {list(stacked.band.values)}")
+        else:
+            # Write directly to GCS using GDAL's gcs:// support
+            gcs_path = posixpath.join(self._gcs_prefix, f"{output_basename}.tif")
+            stacked.rio.to_raster(
+                gcs_path,
+                driver="COG",  # or "GTiff" if you don't care about COG
+                compute=True,
+            )
+            print(f"Exported to GCS: {gcs_path} with bands {list(stacked.band.values)}")
+
+        # We don't need to return any xarray object; just return a small token
+        return output_basename
+
+    def _format_dataset(self, ds, ds_output):
+        crs = ds.attrs.get("crs", None)
+
+        rename_dims = {}
+        if "X" in ds_output.dims:
+            rename_dims["X"] = "x"
+        if "Y" in ds_output.dims:
+            rename_dims["Y"] = "y"
+
+        ds_renamed = ds_output.rename(rename_dims)
+        ds_transposed = (
+            ds_renamed
+            .transpose(self._first_dim, "y", "x")
+            .rio.write_crs(crs)
+        )
+        return ds_transposed.sortby("y", ascending=False)
+    
+    def run_and_export_results(self, data_source: RasterDataset | EarthEngineDataset):
+        """Main function to apply user function and export results."""
+
+        if not callable(self.user_function_handler.user_function):
+            raise ValueError("The provided function must be callable.")
+
+        # Assume first dim is 'time'
+        self._first_dim = list(data_source.dataset.dims)[0]
+
+        # Let handler define chunking
+        ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
+
+        # Prepare GCS prefix if needed
+        if self.kwargs.get("export_to_gcs"):
+            self._gcs_prefix = self._create_bucket_and_folder(
+                self.kwargs.get("gcs_credentials"),
+                self.kwargs.get("gcs_bucket"),
+                self.kwargs.get("gcs_folder", None),
+            )
+
+        # Build one delayed export task per time step
+        n = ds.sizes[self._first_dim]
+        tasks = [
+            delayed(self._user_function_export_wrapper)(ds, idx)
+            for idx in range(n)
+        ]
+
+        # Trigger computation & exports in parallel
+        if self.kwargs.get("report") is True:
+            with performance_report(filename="dask_report.html"):
+                compute(*tasks)
+        else:
+            compute(*tasks)
+
+        # Optional: VRT per time slice, as before
+        if self.kwargs.get("vrt"):
+            self.export_vrt(data_source)
+    
     def export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
         for i, time_val in enumerate(data_source.dataset[self._first_dim].values):
             self._generate_vrt_from_tifs(time_val)
