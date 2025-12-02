@@ -121,7 +121,7 @@ class RasterDataset(DataReaderInterface):
                 count = src.count
                 descs = tuple(src.descriptions or ())
                 crs = src.crs
-                print(crs)
+                #print(crs)
 
             # Open lazily with Dask-friendly chunks
             da_or_ds = rxr.open_rasterio(fp, masked=True, chunks={"x": CHUNK_X, "y": CHUNK_Y})
@@ -251,7 +251,9 @@ class RasterDataset(DataReaderInterface):
         #combined.attrs.update({
         #    "crs": crs,
         #})
-
+        print("DATA READ")
+        print()
+        print(combined)
         return combined
 
     """
