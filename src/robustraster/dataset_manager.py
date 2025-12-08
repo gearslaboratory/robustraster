@@ -251,9 +251,6 @@ class RasterDataset(DataReaderInterface):
         #combined.attrs.update({
         #    "crs": crs,
         #})
-        print("DATA READ")
-        print()
-        print(combined)
         return combined
 
     """

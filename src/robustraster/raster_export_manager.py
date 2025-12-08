@@ -27,6 +27,8 @@ class RasterExportProcessor:
         self._time_value = None
         self._output_basename = None
         self._gcs_prefix = None
+
+        self._template_xarray = None
     
     def _generate_vrt(self, input_files: list, output_vrt: str):
         """Generate a VRT file from a list of GeoTIFF files."""
@@ -110,21 +112,23 @@ class RasterExportProcessor:
         """
         df_input = ds.to_dataframe().reset_index()
         df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
-        #print(df_output)
         df_output = df_output.set_index(list(ds.dims))
         ds_output = df_output.to_xarray()
         
         ds_transposed = self._format_dataset(ds, ds_output)
 
-        print(ds_transposed)
-        print("PETER GABRIEL")
         for i, time_val in enumerate(ds_transposed[self._first_dim].values):
             self._time_value = time_val
             slice_2d = ds_transposed.isel({self._first_dim: i})
             self._output_basename = self._create_output_basename(slice_2d)
             self._compute_chunks_and_export(slice_2d)
         
-        return ds_transposed
+        ds_final = self._format_back(ds_transposed)
+        print("FINAL DATASET!")
+        print()
+        print()
+        print(ds_final)
+        return ds_final
     
     def _format_dataset(self, ds, ds_output):
         # Format dataset by renaming, transposing, and ensuring CRS.
@@ -138,6 +142,15 @@ class RasterExportProcessor:
         ds_renamed = ds_output.rename(rename_dims)
         ds_transposed = ds_renamed.transpose(self._first_dim, 'y', 'x').rio.write_crs(crs)
         return ds_transposed.sortby("y", ascending=False)
+
+    def _format_back(self, ds_output):
+        rename_dims = {}
+        if 'x' in ds_output.dims:
+            rename_dims['x'] = 'X'
+        if 'y' in ds_output.dims:
+            rename_dims['y'] = 'Y'
+        ds_renamed = ds_output.rename(rename_dims)
+        return ds_renamed
     
     def _compute_chunks_and_export(self, ds_transposed):
         """Export a single block (already chunked by Dask) using the appropriate method."""
@@ -196,99 +209,103 @@ class RasterExportProcessor:
 
         print(f"Exported to GCS: {gcs_path} with bands {list(stacked.band.values)}")
 
-    # def run_and_export_results(self, data_source: RasterDataset | EarthEngineDataset):
-    #     # Keyword arguments:
-    #     # flag: str
-    #     # chunks: Optional[dict | str]
-    #     # output_folder: str
-    #     # gcs_bucket: str
-    #     # gcs_folder: str
-    #     """Main function to apply user function and export results."""
+    def run_and_export_results(self, data_source: RasterDataset | EarthEngineDataset):
+        # Keyword arguments:
+        # flag: str
+        # chunks: Optional[dict | str]
+        # output_folder: str
+        # gcs_bucket: str
+        # gcs_folder: str
+        """Main function to apply user function and export results."""
         
-    #     if not callable(self.user_function_handler.user_function):
-    #         raise ValueError("The provided function must be callable.")
+        if not callable(self.user_function_handler.user_function):
+            raise ValueError("The provided function must be callable.")
 
-    #     self._first_dim = list(data_source.dataset.dims)[0]
-    #     ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
-    #     #ds = data_source.dataset
-    #     # Generate template xarray
-    #     template_xarray = self.user_function_handler._generate_template_xarray(ds)
-
-    #     if self.kwargs.get("export_to_gcs"):
-    #         self._gcs_prefix = self._create_bucket_and_folder(self.kwargs.get("gcs_credentials"), self.kwargs.get("gcs_bucket"), self.kwargs.get("gcs_folder", None))
-
-    #     result = xr.map_blocks(self._user_function_export_wrapper,
-    #                                ds,
-    #                                template=template_xarray)
+        self._first_dim = list(data_source.dataset.dims)[0]
+        ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
+        #ds = data_source.dataset
+        # Generate template xarray
+        self._template_xarray = self.user_function_handler._generate_template_xarray(ds)
+        print("TEMPLATE!!!")
+        print()
+        print(self._template_xarray)
+        if self.kwargs.get("export_to_gcs"):
+            self._gcs_prefix = self._create_bucket_and_folder(self.kwargs.get("gcs_credentials"), self.kwargs.get("gcs_bucket"), self.kwargs.get("gcs_folder", None))
         
-    #     if self.kwargs.get("report") is True:
-    #         with performance_report(filename="dask_report.html"):
-    #             result.compute()
-    #     else:
-    #         result.compute()
+        print("DATASET")
+        print(ds)
+        result = xr.map_blocks(self._user_function_export_wrapper,
+                                   ds,
+                                   template=self._template_xarray)
+        
+        if self.kwargs.get("report") is True:
+            with performance_report(filename="dask_report.html"):
+                result.compute()
+        else:
+            result.compute()
 
-    #     if self.kwargs.get('vrt'):
-    #         self.export_vrt(data_source)
+        if self.kwargs.get('vrt'):
+            self.export_vrt(data_source)
 
     def export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
         for i, time_val in enumerate(data_source.dataset[self._first_dim].values):
             self._generate_vrt_from_tifs(time_val)
     
     ##### NEW CODE TESTING TILING ###
-    def _iter_tiles(self, ds, tile_size_px):
-        Y = ds.sizes["Y"]
-        X = ds.sizes["X"]
+    # def _iter_tiles(self, ds, tile_size_px):
+    #     Y = ds.sizes["Y"]
+    #     X = ds.sizes["X"]
 
-        tile_y = tile_size_px.get("y", Y)
-        tile_x = tile_size_px.get("x", X)
+    #     tile_y = tile_size_px.get("y", Y)
+    #     tile_x = tile_size_px.get("x", X)
 
-        ny = math.ceil(Y / tile_y)
-        nx = math.ceil(X / tile_x)
+    #     ny = math.ceil(Y / tile_y)
+    #     nx = math.ceil(X / tile_x)
 
-        for iy in range(ny):
-            y0 = iy * tile_y
-            y1 = min((iy + 1) * tile_y, Y)
-            for ix in range(nx):
-                x0 = ix * tile_x
-                x1 = min((ix + 1) * tile_x, X)
-                yield slice(y0, y1), slice(x0, x1)
+    #     for iy in range(ny):
+    #         y0 = iy * tile_y
+    #         y1 = min((iy + 1) * tile_y, Y)
+    #         for ix in range(nx):
+    #             x0 = ix * tile_x
+    #             x1 = min((ix + 1) * tile_x, X)
+    #             yield slice(y0, y1), slice(x0, x1)
     
-    def run_and_export_results(self, data_source):
-        if not callable(self.user_function_handler.user_function):
-            raise ValueError("The provided function must be callable.")
+    # def run_and_export_results(self, data_source):
+    #     if not callable(self.user_function_handler.user_function):
+    #         raise ValueError("The provided function must be callable.")
 
-        self._first_dim = list(data_source.dataset.dims)[0]
+    #     self._first_dim = list(data_source.dataset.dims)[0]
 
-        # Make full dataset lazy + chunked (your handler already does this)
-        #full_ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
+    #     # Make full dataset lazy + chunked (your handler already does this)
+    #     #full_ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
 
-        full_ds = data_source.dataset
-        # Full template, then we slice it per tile
-        template_full = self.user_function_handler._generate_template_xarray(full_ds)
-        print("TEMPLATE!!!")
-        print()
-        print(template_full)
-        # Configure GCS once
-        if self.kwargs.get("export_to_gcs"):
-            self._gcs_prefix = self._create_bucket_and_folder(
-                self.kwargs.get("gcs_credentials"),
-                self.kwargs.get("gcs_bucket"),
-                self.kwargs.get("gcs_folder", None),
-            )
+    #     full_ds = data_source.dataset
+    #     # Full template, then we slice it per tile
+    #     template_full = self.user_function_handler._generate_template_xarray(full_ds)
+    #     print("TEMPLATE!!!")
+    #     print()
+    #     print(template_full)
+    #     # Configure GCS once
+    #     if self.kwargs.get("export_to_gcs"):
+    #         self._gcs_prefix = self._create_bucket_and_folder(
+    #             self.kwargs.get("gcs_credentials"),
+    #             self.kwargs.get("gcs_bucket"),
+    #             self.kwargs.get("gcs_folder", None),
+    #         )
 
-        tile_size_px = self.kwargs.get("tile_size_px", {"Y": 10000, "X": 10000})
+    #     tile_size_px = self.kwargs.get("tile_size_px", {"Y": 10000, "X": 10000})
 
-        for y_slc, x_slc in self._iter_tiles(full_ds, tile_size_px):
-            ds_tile = full_ds.isel(Y=y_slc, X=x_slc)
-            template_tile = template_full.isel(Y=y_slc, X=x_slc)
-            #print(ds_tile)
-            result_tile = xr.map_blocks(
-                self._user_function_export_wrapper,
-                ds_tile,
-                template=template_tile,
-            )
+    #     for y_slc, x_slc in self._iter_tiles(full_ds, tile_size_px):
+    #         ds_tile = full_ds.isel(Y=y_slc, X=x_slc)
+    #         template_tile = template_full.isel(Y=y_slc, X=x_slc)
+    #         #print(ds_tile)
+    #         result_tile = xr.map_blocks(
+    #             self._user_function_export_wrapper,
+    #             ds_tile,
+    #             template=template_tile,
+    #         )
 
-            result_tile.compute()
+    #         result_tile.compute()
 
-        if self.kwargs.get("vrt"):
-            self.export_vrt(data_source)
+    #     if self.kwargs.get("vrt"):
+    #         self.export_vrt(data_source)
