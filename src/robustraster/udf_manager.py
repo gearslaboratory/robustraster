@@ -421,6 +421,7 @@ class UserFunctionHandler:
         if self.output_template is not None:
             return self._generate_template_xarray_from_user(ds)
         else:
+            print("AUTO")
             return self._autogenerate_template_xarray(ds)
 
     def _user_function_wrapper(self, ds, *args):
