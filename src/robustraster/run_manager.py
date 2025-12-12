@@ -136,10 +136,7 @@ def run(
                     **export_kwargs
                 )
             print("[robustraster] Running user function...")
-            if source == 'local':
-                processor.local_run_and_export_results(data_source)
-            elif source == 'ee':
-                processor.ee_run_and_export_results(data_source)
+            processor.run_and_export_results(data_source)
 
             client.close()
             client.shutdown()
