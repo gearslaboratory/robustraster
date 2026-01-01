@@ -29,6 +29,7 @@ class RasterExportProcessor:
 
         self._template_xarray = None
         self._data_source = None
+        self._tile_id = None
     
     def run_and_export_results(self, data_source: RasterDataset | EarthEngineDataset):
         # Keyword arguments:

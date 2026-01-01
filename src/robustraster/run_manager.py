@@ -164,19 +164,20 @@ def run(
 
             print("[robustraster] AOI tiling enabled. Streaming tiles in batches...")
 
+            total_tiles = tiles_fc.size().getInfo()
+
             # Process tiles sequentially, but retrieve geometries in batches
             for tile_i, tile_geom in enumerate(iter_tiles_from_fc(tiles_fc, batch_size=200), start=1):
                 tile_dataset_kwargs = dict(dataset_kwargs)
                 tile_dataset_kwargs["geometry"] = tile_geom
                 tile_dataset_kwargs.pop("tile_max_pixels", None)
 
-                print(f"[robustraster] Processing tile {tile_i}")
+                print(f"[robustraster] Processing tile {tile_i} of {total_tiles}")
 
                 data_source = DatasetAdapterFactory(source, dataset, tile_dataset_kwargs)
                 
-                processor.run_and_export_results(data_source)
-                
                 print("[robustraster] Running user function...")
+                processor._tile_id = tile_i
                 processor.run_and_export_results(data_source)
 
             client.close()

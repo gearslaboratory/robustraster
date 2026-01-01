@@ -10,6 +10,10 @@ import glob
 import posixpath
 from dask.distributed import performance_report, print
 
+import numpy as np
+import pandas as pd
+import datetime as dt
+
 class RasterExportProcessor:
     def __init__(self, user_function_handler=None, **kwargs):
         """
@@ -29,6 +33,9 @@ class RasterExportProcessor:
 
         self._template_xarray = None
         self._data_source = None
+
+        # For the naming scheme of my output files
+        self._tile_id = None
 
     def _iter_chunk_batches(
         self,
@@ -122,6 +129,7 @@ class RasterExportProcessor:
 
         self._first_dim = list(data_source.dataset.dims)[0]
         ds = self.user_function_handler._create_apply_chunk(data_source.dataset)
+        
         # Generate template xarray (for non-batched runs)
         self._template_xarray = self.user_function_handler._generate_template_xarray(ds)
 
@@ -174,7 +182,7 @@ class RasterExportProcessor:
             )
 
             if self.kwargs.get("report") is True:
-                with performance_report(filename="dask_report.html"):
+                with performance_report(filename=f"dask_report_tile_{self._tile_id}.html"):
                     result.compute()
             else:
                 result.compute()
@@ -223,6 +231,7 @@ class RasterExportProcessor:
         Returns:
         - result: the result of applying the function to the dataframe.
         """
+
         df_input = ds.to_dataframe().reset_index()
         df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
         df_output = df_output.set_index(list(ds.dims))
@@ -264,65 +273,30 @@ class RasterExportProcessor:
         ds_renamed = ds_output.rename(rename_dims)
         return ds_renamed
     
-    # def _create_output_basename(self, ds_block):
-    #     time_str = str(self._time_value).replace(":", "_").replace("-", "_").replace(" ", "_")
-    #     chunk_hash = hash(tuple(ds_block.coords[dim].values[0] for dim in ds_block.dims))
-
-    #     return f"chunk_{chunk_hash}_{self._first_dim}_{time_str}"
+    def _safe_time(self, v):
+        if isinstance(v, np.datetime64):
+            v = pd.to_datetime(v).to_pydatetime()
+        if isinstance(v, dt.date) and not isinstance(v, dt.datetime):
+            v = dt.datetime(v.year, v.month, v.day)
+        return str(v).replace(":", "").replace("-", "").replace(" ", "T").split(".")[0]
 
     def _create_output_basename(self, ds_block):
-        """Create a deterministic, debuggable basename for an output chunk.
-
-        The basename is derived from the coordinate *bounds* (first/last coord) of each
-        dimension in the block, rather than a hash. This makes filenames stable and
-        easy to trace back to their spatial/temporal slice.
         """
-        import numpy as np
-        import pandas as pd
-        import datetime as dt
+        Short deterministic basename:
+        tile_<tile_id>__<first_dim>_<time>
+        """
+        chunk_tag = hash(tuple(ds_block.coords[dim].values[0] for dim in ds_block.dims))
 
-        def _safe(v):
-            # Convert numpy scalar → Python scalar
-            if isinstance(v, np.generic):
-                v = v.item()
-            # Datetime-like
-            if isinstance(v, (np.datetime64, dt.datetime, dt.date)):
-                try:
-                    if isinstance(v, np.datetime64):
-                        v = pd.to_datetime(v).to_pydatetime()
-                    if isinstance(v, dt.date) and not isinstance(v, dt.datetime):
-                        v = dt.datetime(v.year, v.month, v.day)
-                    return v.strftime('%Y%m%dT%H%M%S')
-                except Exception:
-                    s = str(v)
-                    return s.replace(':', '').replace('-', '').replace(' ', 'T')
-            # Integers
-            if isinstance(v, (int, np.integer)):
-                return str(int(v))
-            # Floats: keep compact, filesystem-safe token
-            if isinstance(v, (float, np.floating)):
-                s = f"{float(v):.3f}"
-                return s.replace('-', 'm').replace('.', 'p')
-            # Fallback string sanitize
-            s = str(v)
-            for ch in [' ', ':', '/', '\\', '.', ',', '[', ']', '(', ')', '{', '}', "'", '"']:
-                s = s.replace(ch, '_')
-            return s[:64]
-
-        # Use the *block's* coordinate bounds (per dim) so the filename indicates slice bounds.
-        parts = []
-        for dim in ds_block.dims:
-            vals = ds_block.coords[dim].values
-            if getattr(vals, 'size', 0) == 0:
-                continue
-            v0 = vals[0]
-            v1 = vals[-1]
-            parts.append(f"{dim}_{_safe(v0)}_{_safe(v1)}")
-
-        bounds_tag = '__'.join(parts) if parts else 'chunk'
-        time_str = str(self._time_value).replace(':', '_').replace('-', '_').replace(' ', '_')
-        return f"{bounds_tag}__{self._first_dim}_{time_str}"
+        # tile id (if not set, fall back to "chunk")
+        if getattr(self, "_tile_id", None) is not None:
+            tile_tag = f"tile_{int(self._tile_id):06d}"
+        else:
+            tile_tag = "tile_unknown"
     
+        time_tag = self._safe_time(self._time_value)
+
+        return f"{chunk_tag}_{tile_tag}__{self._first_dim}_{time_tag}"
+
     def _compute_chunks_and_export(self, ds_transposed):
         """Export a single block (already chunked by Dask) using the appropriate method."""
         stacked = self._convert_to_multiband(ds_transposed)
@@ -363,6 +337,12 @@ class RasterExportProcessor:
             for idx, name in enumerate(band_names, start=1):
                 dst.write(stacked[idx - 1].values, indexes=idx)
                 dst.set_band_description(idx, str(name))
+                dst.update_tags(
+                x_min=float(stacked.coords["x"].values[0]),
+                x_max=float(stacked.coords["x"].values[-1]),
+                y_min=float(stacked.coords["y"].values[-1]),
+                y_max=float(stacked.coords["y"].values[0]),
+                )
 
         print(f"Exported: {output_path} with bands {band_names}")
     
@@ -396,10 +376,11 @@ class RasterExportProcessor:
     def _generate_vrt_from_tifs(self, time_val):
         """Generate a VRT from all GeoTIFF files in a given directory."""
         output_folder = self.kwargs.get('output_folder', 'tiles')
-        time_str = str(time_val).replace(":", "_").replace("-", "_").replace(" ", "_")
-        vrt_file_name = f"{self._first_dim}_{time_str}.vrt"
+        #time_str = str(time_val).replace(":", "_").replace("-", "_").replace(" ", "_")
+        time_tag = self._safe_time(self._time_value)
+        vrt_file_name = f"tile_{self._tile_id}_{time_tag}.vrt"
         output_vrt_path = os.path.join(output_folder, vrt_file_name)
-        tif_files = glob.glob(os.path.join(output_folder, f"*{self._first_dim}_{time_str}*.tif"))
+        tif_files = glob.glob(os.path.join(output_folder, f"*tile_{self._tile_id}*.tif"))
         self._generate_vrt(tif_files, output_vrt_path)
     
     def _generate_vrt(self, input_files: list, output_vrt: str):
