@@ -238,7 +238,6 @@ class RasterExportProcessor:
         ds_output = df_output.to_xarray()
         
         ds_transposed = self._format_dataset(ds, ds_output)
-
         for i, time_val in enumerate(ds_transposed[self._first_dim].values):
             self._time_value = time_val
             slice_2d = ds_transposed.isel({self._first_dim: i})
@@ -288,14 +287,14 @@ class RasterExportProcessor:
         chunk_tag = hash(tuple(ds_block.coords[dim].values[0] for dim in ds_block.dims))
 
         # tile id (if not set, fall back to "chunk")
-        if getattr(self, "_tile_id", None) is not None:
-            tile_tag = f"tile_{int(self._tile_id):06d}"
-        else:
-            tile_tag = "tile_unknown"
+        #if getattr(self, "_tile_id", None) is not None:
+        #    self._tile_id = f"tile_{int(self._tile_id):03d}"
+        #else:
+        #    self._tile_id = "tile_unknown"
     
         time_tag = self._safe_time(self._time_value)
 
-        return f"{chunk_tag}_{tile_tag}__{self._first_dim}_{time_tag}"
+        return f"{chunk_tag}_tile_{self._tile_id}__{self._first_dim}_{time_tag}"
 
     def _compute_chunks_and_export(self, ds_transposed):
         """Export a single block (already chunked by Dask) using the appropriate method."""
@@ -371,16 +370,17 @@ class RasterExportProcessor:
     
     def _export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
         for i, time_val in enumerate(data_source.dataset[self._first_dim].values):
+            print(i)
             self._generate_vrt_from_tifs(time_val)
 
     def _generate_vrt_from_tifs(self, time_val):
         """Generate a VRT from all GeoTIFF files in a given directory."""
         output_folder = self.kwargs.get('output_folder', 'tiles')
         #time_str = str(time_val).replace(":", "_").replace("-", "_").replace(" ", "_")
-        time_tag = self._safe_time(self._time_value)
-        vrt_file_name = f"tile_{self._tile_id}_{time_tag}.vrt"
-        output_vrt_path = os.path.join(output_folder, vrt_file_name)
-        tif_files = glob.glob(os.path.join(output_folder, f"*tile_{self._tile_id}*.tif"))
+        time_tag = self._safe_time(time_val)
+        file_basename = f"tile_{self._tile_id}__{self._first_dim}_{time_tag}"
+        output_vrt_path = os.path.join(output_folder, f"{file_basename}.vrt")
+        tif_files = glob.glob(os.path.join(output_folder, f"*{file_basename}.tif"))
         self._generate_vrt(tif_files, output_vrt_path)
     
     def _generate_vrt(self, input_files: list, output_vrt: str):

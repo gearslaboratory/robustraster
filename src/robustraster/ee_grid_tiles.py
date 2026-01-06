@@ -1,51 +1,106 @@
 import math
 import ee
 
+
 def ee_covering_grid_tiles(aoi, crs: str, scale: float, tile_max_pixels: int):
     """
-    Returns an ee.FeatureCollection of tile geometries covering the AOI (server-side).
-    Tiles are aligned to the specified CRS and sized based on scale + tile_max_pixels.
+    Create rectangular grid tiles covering an AOI, aligned to the given CRS.
+    Tiles are sized by sqrt(tile_max_pixels) * scale.
+
+    If AOI already fits inside one tile, return a FeatureCollection with a single AOI feature.
+
+    Parameters
+    ----------
+    aoi : ee.Geometry | ee.Feature | ee.FeatureCollection | geojson-like
+        AOI object.
+    crs : str
+        CRS string like "EPSG:3310".
+    scale : float
+        Pixel scale (meters).
+    tile_max_pixels : int
+        Maximum number of pixels per tile (controls tile side length).
+
+    Returns
+    -------
+    ee.FeatureCollection
+        FeatureCollection of rectangular tiles.
     """
-    # Normalize AOI to ee.Geometry
-    if isinstance(aoi, ee.FeatureCollection):
+
+    # Normalize AOI to ee.Geometry safely
+    if isinstance(aoi, ee.featurecollection.FeatureCollection):
         aoi_geom = aoi.geometry()
-    elif isinstance(aoi, ee.Feature):
+    elif isinstance(aoi, ee.feature.Feature):
         aoi_geom = aoi.geometry()
     else:
         aoi_geom = ee.Geometry(aoi)
 
-    # Compute tile side (meters) from pixel budget
-    tile_side_px = int(math.sqrt(int(tile_max_pixels)))
+    # Compute tile size from pixel budget
+    tile_side_px = int(math.floor(math.sqrt(int(tile_max_pixels))))
     if tile_side_px <= 0:
         raise ValueError("tile_max_pixels must be > 0")
 
-    tile_side_m = int(tile_side_px * float(scale))
+    tile_side_m = float(tile_side_px) * float(scale)
     if tile_side_m <= 0:
         raise ValueError("scale must be > 0")
 
-    # Projection defines grid alignment and cell size
-    proj = ee.Projection(crs).atScale(tile_side_m)
+    proj = ee.Projection(crs)
 
-    # Create grid cells covering AOI
-    grid_fc = aoi_geom.coveringGrid(proj)
+    # Compute AOI size in projection units (meters-ish)
+    bounds = aoi_geom.bounds(ee.ErrorMargin(1), proj)
+    coords = ee.List(bounds.coordinates().get(0))
 
-    # # Intersect each cell with AOI so tiles don't extend beyond it
-    # def clip_cell(f):
-    #     f = ee.Feature(f)
-    #     g = f.geometry().intersection(aoi_geom, ee.ErrorMargin(1))
-    #     return ee.Feature(g).copyProperties(f)
+    ll = ee.List(coords.get(0))  # lower-left
+    ur = ee.List(coords.get(2))  # upper-right
 
-    # tiles_fc = grid_fc.map(clip_cell)
+    width = ee.Number(ur.get(0)).subtract(ll.get(0)).abs()
+    height = ee.Number(ur.get(1)).subtract(ll.get(1)).abs()
 
-    # Remove any empty geometries
-    #tiles_fc = tiles_fc.filter(ee.Filter.geometry())
+    # If AOI already fits in one tile, return single AOI feature
+    fits_in_one_tile = width.lte(tile_side_m).And(height.lte(tile_side_m))
 
-    # Keep only tiles that intersect AOI (server-side)
-    tiles_fc = grid_fc.filter(
+    grid_tiles = aoi_geom.coveringGrid(proj.atScale(tile_side_m)).filter(
         ee.Filter.intersects(leftField=".geo", rightValue=aoi_geom)
     )
 
-    return grid_fc
+    single_tile_fc = ee.FeatureCollection([ee.Feature(aoi_geom)])
+
+    tiles_fc = ee.FeatureCollection(
+        ee.Algorithms.If(fits_in_one_tile, single_tile_fc, grid_tiles)
+    )
+
+    return tiles_fc
+
+
+def clip_tiles_to_aoi(tiles_fc, aoi_geom):
+    """
+    Clip each tile geometry to AOI using intersection, and remove empty results.
+
+    Parameters
+    ----------
+    tiles_fc : ee.FeatureCollection
+        Rectangular tiles FeatureCollection.
+    aoi_geom : ee.Geometry
+        AOI geometry.
+
+    Returns
+    -------
+    ee.FeatureCollection
+        FeatureCollection where each tile's geometry is tile ∩ AOI.
+    """
+
+    def _clip_one_tile(f):
+        f = ee.Feature(f)
+        clipped = f.geometry().intersection(aoi_geom, ee.ErrorMargin(1))
+        return ee.Feature(clipped).copyProperties(f).set(
+            "clip_area", clipped.area(ee.ErrorMargin(1))
+        )
+
+    clipped_fc = ee.FeatureCollection(tiles_fc.map(_clip_one_tile)).filter(
+        ee.Filter.gt("clip_area", 0)
+    )
+
+    return clipped_fc
+
 
 def iter_tiles_from_fc(tiles_fc, batch_size=200):
     """

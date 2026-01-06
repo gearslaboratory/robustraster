@@ -7,7 +7,7 @@ from .vector_export_manager import VectorExportProcessor
 from .udf_manager import UserFunctionHandler
 from .dask_plugins import EEPlugin
 from .hooks import preview_dataset_hook
-from .ee_grid_tiles import ee_covering_grid_tiles
+from .ee_grid_tiles import ee_covering_grid_tiles, clip_tiles_to_aoi
 from .ee_grid_tiles import iter_tiles_from_fc
 import pandas as pd
 import ee
@@ -162,12 +162,13 @@ def run(
                 tile_max_pixels=int(tile_max_pixels),
             )
 
+            clipped_tiles = clip_tiles_to_aoi(tiles_fc, aoi)
             print("[robustraster] AOI tiling enabled. Streaming tiles in batches...")
 
             total_tiles = tiles_fc.size().getInfo()
 
             # Process tiles sequentially, but retrieve geometries in batches
-            for tile_i, tile_geom in enumerate(iter_tiles_from_fc(tiles_fc, batch_size=200), start=1):
+            for tile_i, tile_geom in enumerate(iter_tiles_from_fc(clipped_tiles, batch_size=200), start=1):
                 tile_dataset_kwargs = dict(dataset_kwargs)
                 tile_dataset_kwargs["geometry"] = tile_geom
                 tile_dataset_kwargs.pop("tile_max_pixels", None)

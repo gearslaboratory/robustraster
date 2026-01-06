@@ -825,7 +825,7 @@ class EarthEngineDataset(DataReaderInterface):
             # Create an ee.FeatureCollection
             fc = ee.FeatureCollection(geojson_dict)
             return fc.geometry()
-    
+
     def _construct_ee_collection(self, parameters: dict) -> ee.ImageCollection:
         """
         A private method not intended for user use. Construct an Earth Engine image collection 
@@ -887,13 +887,24 @@ class EarthEngineDataset(DataReaderInterface):
 
         if dataset_kwargs['geometry'] and isinstance(dataset_kwargs['geometry'], ee.geometry.Geometry):
             sorted_ic = sorted_ic.filterBounds(dataset_kwargs['geometry'])
+            clipped_ic = clip_ic(sorted_ic, dataset_kwargs['geometry'])
         elif dataset_kwargs['geometry'] and not isinstance(dataset_kwargs['geometry'], ee.geometry.Geometry):
             dataset_kwargs['geometry'] = self._vector_to_geometry(dataset_kwargs['geometry'])
             sorted_ic = sorted_ic.filterBounds(dataset_kwargs['geometry'])
+            clipped_ic = clip_ic(sorted_ic, dataset_kwargs['geometry'])
         xarray_data = xr.open_dataset(
-            sorted_ic,
+            clipped_ic,
             engine='ee',
             **dataset_kwargs
         )
         
         return xarray_data
+    
+def clip_ic(ic, geom):
+    """Clips every image in an ImageCollection to a geometry."""
+    #geom = ee.Geometry(geom)
+
+    def _clip(img):
+        return ee.Image(img).clip(geom)
+
+    return ee.ImageCollection(ic).map(_clip)
