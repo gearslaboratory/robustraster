@@ -9,10 +9,13 @@ from .dask_plugins import EEPlugin
 from .hooks import preview_dataset_hook
 from .ee_grid_tiles import ee_covering_grid_tiles, clip_tiles_to_aoi
 from .ee_grid_tiles import iter_tiles_from_fc
-import pandas as pd
+from .vrt_export_manager import export_vrt
 import ee
 from typing import Any, Callable, Optional, Union
 from dask import config
+from pathlib import Path
+import json
+import time
 
 def DatasetAdapterFactory(source, dataset, dataset_kwargs=None):
     """
@@ -26,6 +29,31 @@ def DatasetAdapterFactory(source, dataset, dataset_kwargs=None):
         return RasterDataset(file_path=dataset, dataset_kwargs=dataset_kwargs)
     else:
         raise ValueError("Source must be 'ee' or a file path (str or list of str).")
+
+def report_dir(out_dir):
+    d = Path(out_dir) / "reports"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+def write_success(tile_id, out_dir):
+    marker = report_dir(out_dir) / f"tile_{tile_id}.success.json"
+    marker.write_text(json.dumps({
+        "tile_id": tile_id,
+        "status": "success",
+        "timestamp": time.time()
+    }))
+    return marker
+
+def write_failure(tile_id, out_dir, exc):
+    marker = report_dir(out_dir) / f"tile_{tile_id}.failure.json"
+    marker.write_text(json.dumps({
+        "tile_id": tile_id,
+        "status": "failure",
+        "error": repr(exc),
+        "timestamp": time.time()
+    }))
+    return marker
+
 
 def run(
     dataset: str | list[str] | ee.imagecollection.ImageCollection,
@@ -167,6 +195,8 @@ def run(
 
             total_tiles = tiles_fc.size().getInfo()
 
+            out_root = export_kwargs.get("output_folder", "tiles")
+
             # Process tiles sequentially, but retrieve geometries in batches
             for tile_i, tile_geom in enumerate(iter_tiles_from_fc(clipped_tiles, batch_size=200), start=1):
                 tile_dataset_kwargs = dict(dataset_kwargs)
@@ -175,34 +205,63 @@ def run(
 
                 print(f"[robustraster] Processing tile {tile_i} of {total_tiles}")
 
+                # Resume logic: skip tiles that already succeeded
+                success_marker = report_dir(out_root) / f"tile_{tile_i}.success.json"
+                if success_marker.exists():
+                    print(f"[robustraster] ✅ Tile {tile_i} already succeeded; skipping.")
+                    continue
+
                 data_source = DatasetAdapterFactory(source, dataset, tile_dataset_kwargs)
                 
                 print("[robustraster] Running user function...")
                 processor._tile_id = tile_i
-                processor.run_and_export_results(data_source)
 
+                try:
+                    #if tile_i == 2:
+                    #    raise RuntimeError("TEST: simulated tile failure")
+                    
+                    processor.run_and_export_results(data_source)
+                    write_success(tile_i, out_root)
+                except Exception as e:
+                    write_failure(tile_i, out_root, e)
+                    raise
+            
             client.close()
             client.shutdown()
 
+            if export_kwargs.get("vrt"):
+                export_vrt(data_source, out_root)
+
         else:
+            out_root = export_kwargs.get("output_folder", "tiles")
+
             # existing behavior
             data_source = DatasetAdapterFactory(source, dataset, dataset_kwargs)
 
             if "after_dataset_loaded" in hooks:
                 hooks["after_dataset_loaded"](data_source.dataset)
 
+            report_dir(out_root)
             print("[robustraster] Running user function...")
             processor.run_and_export_results(data_source)
 
             client.close()
             client.shutdown()
 
+            if export_kwargs.get("vrt"):
+                export_vrt(data_source, out_root)
+
         # ========== HOOK: after_run ==========
         if "after_run" in hooks:
             hooks["after_run"](data_source.dataset)
 
     except Exception as e:
-        print("[robustraster] ❌ ERROR during run():", str(e))
+        print(f"[robustraster] ❌ {type(e).__name__} during run():", str(e))
+
+        # Check if the user is tiling the Dask computation. If they are, then write the failure 
+        # JSON.
+        #if processor._tile_id:
+        #    write_failure(processor._tile_id, export_kwargs.get('output_folder', 'tiles'), e)
         raise
 
     finally:

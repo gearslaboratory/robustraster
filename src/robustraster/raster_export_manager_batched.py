@@ -1,18 +1,20 @@
-from osgeo import gdal
 import rasterio
 from rasterio.io import MemoryFile
 from .dataset_manager import RasterDataset, EarthEngineDataset
+from .reports_setup import setup_dask_reports
+from .format_time import create_time_tag
 from google.cloud import storage
+from pathlib import Path
 import xarray as xr
 import gcsfs
 import os
-import glob
 import posixpath
 from dask.distributed import performance_report, print
 
+import os
 import numpy as np
-import pandas as pd
-import datetime as dt
+import rasterio
+from rasterio.transform import from_origin
 
 class RasterExportProcessor:
     def __init__(self, user_function_handler=None, **kwargs):
@@ -27,7 +29,6 @@ class RasterExportProcessor:
         self.kwargs = kwargs
 
         self._first_dim = None
-        self._time_value = None
         self._output_basename = None
         self._gcs_prefix = None
 
@@ -169,8 +170,9 @@ class RasterExportProcessor:
                 )
 
                 if self.kwargs.get("report") is True:
+                    report_path = setup_dask_reports(output_folder, tile_id=self._tile_id, slice_tag=tag)
                     # Avoid overwriting the same report file per batch
-                    with performance_report(filename=f"dask_report_{tag}.html"):
+                    with performance_report(filename=report_path):
                         result.compute()
                 else:
                     result.compute()
@@ -181,14 +183,22 @@ class RasterExportProcessor:
                 template=self._template_xarray,
             )
 
-            if self.kwargs.get("report") is True:
-                with performance_report(filename=f"dask_report_tile_{self._tile_id}.html"):
-                    result.compute()
+            if self.kwargs.get("report") is True and self._tile_id:
+                output_folder = Path(self.kwargs.get("output_folder"))
+                report_path = setup_dask_reports(output_folder, tile_id=self._tile_id, slice_tag=None)
+                with performance_report(filename=report_path):
+                    result.compute() 
+
+            elif self.kwargs.get("report") is True and self._tile_id is None:
+                output_folder = Path(self.kwargs.get("output_folder"))
+                report_path = setup_dask_reports(output_folder, tile_id=None, slice_tag=None)
+                with performance_report(filename=report_path):
+                    result.compute() 
             else:
                 result.compute()
 
-        if self.kwargs.get("vrt"):
-            self._export_vrt(data_source)
+        #if self.kwargs.get("vrt"):
+        #    self._export_vrt(data_source)
     
     def _create_bucket_and_folder(self, gcs_credentials, gcs_bucket, gcs_folder):
         # Initialize GCS client
@@ -236,12 +246,11 @@ class RasterExportProcessor:
         df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
         df_output = df_output.set_index(list(ds.dims))
         ds_output = df_output.to_xarray()
-        
         ds_transposed = self._format_dataset(ds, ds_output)
         for i, time_val in enumerate(ds_transposed[self._first_dim].values):
-            self._time_value = time_val
+            time_tag = create_time_tag(time_val)
             slice_2d = ds_transposed.isel({self._first_dim: i})
-            self._output_basename = self._create_output_basename(slice_2d)
+            self._output_basename = self._create_output_basename(slice_2d, time_tag)
             self._compute_chunks_and_export(slice_2d)
         
         if self._data_source == "local":
@@ -271,30 +280,28 @@ class RasterExportProcessor:
             rename_dims['y'] = 'Y'
         ds_renamed = ds_output.rename(rename_dims)
         return ds_renamed
-    
-    def _safe_time(self, v):
-        if isinstance(v, np.datetime64):
-            v = pd.to_datetime(v).to_pydatetime()
-        if isinstance(v, dt.date) and not isinstance(v, dt.datetime):
-            v = dt.datetime(v.year, v.month, v.day)
-        return str(v).replace(":", "").replace("-", "").replace(" ", "T").split(".")[0]
 
-    def _create_output_basename(self, ds_block):
+    def _create_output_basename(self, slice_2d, time_tag):
         """
         Short deterministic basename:
         tile_<tile_id>__<first_dim>_<time>
         """
-        chunk_tag = hash(tuple(ds_block.coords[dim].values[0] for dim in ds_block.dims))
+        x0 = float(slice_2d.x.min())
+        x1 = float(slice_2d.x.max())
+        y0 = float(slice_2d.y.min())
+        y1 = float(slice_2d.y.max())
 
-        # tile id (if not set, fall back to "chunk")
-        #if getattr(self, "_tile_id", None) is not None:
-        #    self._tile_id = f"tile_{int(self._tile_id):03d}"
-        #else:
-        #    self._tile_id = "tile_unknown"
-    
-        time_tag = self._safe_time(self._time_value)
+        x0, x1, y0, y1 = map(lambda v: int(round(v)), (x0, x1, y0, y1))
 
-        return f"{chunk_tag}_tile_{self._tile_id}__{self._first_dim}_{time_tag}"
+        bbox_tag = f"x{x0}_{x1}_y{y0}_{y1}"
+
+        # If the user needs to tile the data and loop through each Dask computation by tile
+        # then a unique naming scheme for the files will be generated by tile.
+        # Otherwise, export like normal w/o tile naming.
+        if self._tile_id:
+            return f"{bbox_tag}_tile_{self._tile_id}__{self._first_dim}_{time_tag}"
+        else:
+            return f"{bbox_tag}__{self._first_dim}_{time_tag}"
 
     def _compute_chunks_and_export(self, ds_transposed):
         """Export a single block (already chunked by Dask) using the appropriate method."""
@@ -315,12 +322,80 @@ class RasterExportProcessor:
             print("CRS IS NOT SET! SET IT IN YOUR EARTH ENGINE CODE!")
         return stacked
     
+    # def _export_to_geotiff(self, stacked):
+    #     output_folder = self.kwargs.get('output_folder', 'tiles')
+    #     os.makedirs(output_folder, exist_ok=True)
+    #     output_path = os.path.join(output_folder, f"{self._output_basename}.tif")
+
+    #     band_names = list(stacked.band.values)
+
+    #     with rasterio.open(
+    #         output_path,
+    #         "w",
+    #         driver="GTiff",
+    #         height=stacked.rio.height,
+    #         width=stacked.rio.width,
+    #         count=len(band_names),
+    #         dtype=str(stacked.dtype),
+    #         crs=stacked.rio.crs,
+    #         transform=stacked.rio.transform(),
+    #     ) as dst:
+    #         for idx, name in enumerate(band_names, start=1):
+    #             dst.write(stacked[idx - 1].values, indexes=idx)
+    #             dst.set_band_description(idx, str(name))
+    #             dst.update_tags(
+    #             x_min=float(stacked.coords["x"].values[0]),
+    #             x_max=float(stacked.coords["x"].values[-1]),
+    #             y_min=float(stacked.coords["y"].values[-1]),
+    #             y_max=float(stacked.coords["y"].values[0]),
+    #             )
+
+    #     print(f"Exported: {output_path} with bands {band_names}")
+
+
     def _export_to_geotiff(self, stacked):
         output_folder = self.kwargs.get('output_folder', 'tiles')
         os.makedirs(output_folder, exist_ok=True)
         output_path = os.path.join(output_folder, f"{self._output_basename}.tif")
 
         band_names = list(stacked.band.values)
+
+        # ------------------------------------------------------------------
+        # ✅ FIX: Compute a snapped transform instead of using stacked.rio.transform()
+        # ------------------------------------------------------------------
+
+        # Pull x/y coordinate arrays (these are typically pixel centers)
+        x = stacked.coords["x"].values
+        y = stacked.coords["y"].values
+
+        # Compute pixel resolution from coordinate spacing
+        # (Use abs because y usually decreases)
+        xres = float(np.abs(x[1] - x[0]))
+        yres = float(np.abs(y[1] - y[0]))
+
+        # If you want to force 30m always, uncomment this:
+        # xres = yres = 30.0
+
+        # Compute bounds using pixel-center coords -> convert to pixel-edge bounds
+        xmin_center = float(x.min())
+        xmax_center = float(x.max())
+        ymin_center = float(y.min())
+        ymax_center = float(y.max())
+
+        # Convert from pixel centers to pixel edges
+        xmin = xmin_center - (xres / 2.0)
+        ymax = ymax_center + (yres / 2.0)
+
+        # Snap origin to global grid (multiples of resolution)
+        xmin_snapped = np.floor(xmin / xres) * xres
+        ymax_snapped = np.ceil(ymax / yres) * yres
+
+        # Build snapped affine transform
+        transform = from_origin(xmin_snapped, ymax_snapped, xres, yres)
+
+        # ------------------------------------------------------------------
+        # ✅ Export GeoTIFF with snapped transform
+        # ------------------------------------------------------------------
 
         with rasterio.open(
             output_path,
@@ -331,19 +406,26 @@ class RasterExportProcessor:
             count=len(band_names),
             dtype=str(stacked.dtype),
             crs=stacked.rio.crs,
-            transform=stacked.rio.transform(),
+            transform=transform,
         ) as dst:
             for idx, name in enumerate(band_names, start=1):
                 dst.write(stacked[idx - 1].values, indexes=idx)
                 dst.set_band_description(idx, str(name))
-                dst.update_tags(
-                x_min=float(stacked.coords["x"].values[0]),
-                x_max=float(stacked.coords["x"].values[-1]),
-                y_min=float(stacked.coords["y"].values[-1]),
-                y_max=float(stacked.coords["y"].values[0]),
-                )
+
+            # Optional: update tags with the final snapped bounds (pixel edges)
+            # Compute xmax/ymin based on snapped origin + raster dimensions
+            xmax_snapped = xmin_snapped + (stacked.rio.width * xres)
+            ymin_snapped = ymax_snapped - (stacked.rio.height * yres)
+
+            dst.update_tags(
+                x_min=float(xmin_snapped),
+                x_max=float(xmax_snapped),
+                y_min=float(ymin_snapped),
+                y_max=float(ymax_snapped),
+            )
 
         print(f"Exported: {output_path} with bands {band_names}")
+
     
     def _export_to_gcs(self, stacked):
         """Export dataset chunk to Google Cloud Storage as a COG."""
@@ -368,32 +450,40 @@ class RasterExportProcessor:
 
         print(f"Exported to GCS: {gcs_path} with bands {list(stacked.band.values)}")
     
-    def _export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
-        for i, time_val in enumerate(data_source.dataset[self._first_dim].values):
-            print(i)
-            self._generate_vrt_from_tifs(time_val)
 
-    def _generate_vrt_from_tifs(self, time_val):
-        """Generate a VRT from all GeoTIFF files in a given directory."""
-        output_folder = self.kwargs.get('output_folder', 'tiles')
-        #time_str = str(time_val).replace(":", "_").replace("-", "_").replace(" ", "_")
-        time_tag = self._safe_time(time_val)
-        file_basename = f"tile_{self._tile_id}__{self._first_dim}_{time_tag}"
-        output_vrt_path = os.path.join(output_folder, f"{file_basename}.vrt")
-        tif_files = glob.glob(os.path.join(output_folder, f"*{file_basename}.tif"))
-        self._generate_vrt(tif_files, output_vrt_path)
+    # def _export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
+    #     for i, time_val in enumerate(data_source.dataset[self._first_dim].values):
+    #         self._generate_vrt_from_tifs(time_val)
     
-    def _generate_vrt(self, input_files: list, output_vrt: str):
-        """Generate a VRT file from a list of GeoTIFF files."""
-        if not input_files:
-            print("No GeoTIFF files found to create VRT.")
-            return
-        
-        vrt_dataset = gdal.BuildVRT(output_vrt, input_files)
+    # def _generate_vrt_from_tifs(self, time_val):
+    #     """Generate a VRT from all GeoTIFF files in a given directory."""
+    #     output_folder = self.kwargs.get('output_folder', 'tiles')
+    #     time_tag = self._safe_time(time_val)
 
-        if vrt_dataset:
-            vrt_dataset.FlushCache()  # Save changes
-            vrt_dataset = None  # Close dataset
-            print(f"VRT file created successfully: {output_vrt}")
-        else:
-            print("Failed to create VRT file.")
+    #     if self._tile_id:
+    #         vrt_basename = f"tile_{self._tile_id}__{self._first_dim}_{time_tag}"
+    #         output_vrt_path = os.path.join(output_folder, f"{vrt_basename}.vrt")
+    #         print(vrt_basename)
+    #         print(self._output_basename)
+    #         tif_files = glob.glob(os.path.join(output_folder, f"{self._output_basename}.tif"))
+    #         self._generate_vrt(tif_files, output_vrt_path)
+    #     else:
+    #         vrt_basename = f"{self._first_dim}_{time_tag}.vrt"
+    #         output_vrt_path = os.path.join(output_folder, f"{vrt_basename}.vrt")
+    #         tif_files = glob.glob(os.path.join(output_folder, f"*{self._first_dim}_{time_tag}*.tif"))
+    #         self._generate_vrt(tif_files, output_vrt_path)
+    
+    # def _generate_vrt(self, input_files: list, output_vrt: str):
+    #     """Generate a VRT file from a list of GeoTIFF files."""
+    #     if not input_files:
+    #         print("No GeoTIFF files found to create VRT.")
+    #         return
+        
+    #     vrt_dataset = gdal.BuildVRT(output_vrt, input_files)
+
+    #     if vrt_dataset:
+    #         vrt_dataset.FlushCache()  # Save changes
+    #         vrt_dataset = None  # Close dataset
+    #         print(f"VRT file created successfully: {output_vrt}")
+    #     else:
+    #         print("Failed to create VRT file.")
