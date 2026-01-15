@@ -8,7 +8,7 @@ import numpy as np
 from .dataset_manager import RasterDataset, EarthEngineDataset
 from . import performance_metric_helper as pmh
 
-from dask.distributed import performance_report
+from dask.distributed import performance_report, print
 
 class UserFunctionHandler:
     '''
@@ -71,20 +71,30 @@ class UserFunctionHandler:
     For more information on what `max_iterations` does, refer to the docstring
     for `tune_user_function`.
     '''
-    def __init__(self, user_function: Callable[[], pd.DataFrame], *, max_iterations: Optional[int] = None, 
-                 output_template = None, chunks = None, user_function_args: Tuple[Any, ...] = (), 
-                 user_function_kwargs: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        user_function: Callable[..., pd.DataFrame],
+        *,
+        # Existing / core behavior
+        user_function_args: Tuple[Any, ...] = (),
+        user_function_kwargs: Optional[Dict[str, Any]] = None,
+
+        # Option C: accept tuning-related keys you pass in
+        chunks: Any = None,
+        output_template: Any = None,
+        max_iterations: Optional[int] = None,
+    ) -> None:
         '''
         Instantiate the UserFunctionHandler class.
         '''
-
         # User's function and parameters
         self.user_function = user_function
-        self.max_iterations = max_iterations
-        self.output_template = output_template
-        self.chunks = chunks
         self.args = user_function_args
         self.kwargs = user_function_kwargs
+
+        self.chunks = chunks
+        self.output_template = output_template
+        self.max_iterations = max_iterations
 
         # Chunk size parameters
         self._tuned_chunk_size = None
@@ -381,8 +391,7 @@ class UserFunctionHandler:
     def _autogenerate_template_xarray(self, ds):
         # Dynamically determine dimension names
         dim_names = list(ds.sizes.keys())
-        
-        # Extract a single chunk to determine the output structure using dynamic dimension names
+
         one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
         one_chunk = ds.isel(**one_chunk_slices)
         
@@ -417,12 +426,115 @@ class UserFunctionHandler:
         
         return template
     
+    def _autogenerate_template_xarray_tuning(self, ds: xr.Dataset) -> xr.Dataset:
+        """
+        Automatically generate a template xarray Dataset that matches the structure
+        of the user function output. Robust to non-dask-backed datasets (ds.chunks may be empty).
+
+        Strategy:
+        1) Determine the spatial/temporal dimension names from the input dataset.
+        2) Extract a small representative slice ("one chunk") using ds.chunks when present,
+            otherwise ds.sizes as a fallback.
+        3) Run the user function on that slice to infer output variables/dtypes/dims.
+        4) Build an empty template Dataset with correct coords/dims and variable metadata.
+        """
+
+        # ---- 1) Determine dimension names (use your existing logic if you already have it) ----
+        # If you already compute dim_names elsewhere, keep that. Here’s a safe default:
+        dim_names = list(ds.dims)  # e.g. ['time', 'X', 'Y'] or whatever your dataset uses
+        print(dim_names)
+
+        # ---- 2) Build "one chunk" slice robustly ----
+        one_chunk_slices = {}
+        for dim in dim_names:
+            if ds.chunks and dim in ds.chunks:
+                stop = ds.chunks[dim][0]
+            else:
+                stop = ds.sizes[dim]  # fallback when not chunked
+            one_chunk_slices[dim] = slice(0, stop)
+
+        one_chunk = ds.isel(**one_chunk_slices)
+
+        # ---- 3) Apply the user function to infer output structure ----
+        # Use your existing call path if you have wrappers; this is the generic version.
+        # Assumes you store:
+        #   self.user_function, self.user_function_args, self.user_function_kwargs
+        result = self.user_function(one_chunk, *self.args, **self.kwargs)
+
+        # Normalize result into a Dataset
+        if isinstance(result, xr.Dataset):
+            out_ds = result
+
+        elif isinstance(result, xr.DataArray):
+            name = result.name or "output"
+            out_ds = result.to_dataset(name=name)
+
+        elif isinstance(result, dict):
+            # dict of {name: DataArray/ndarray/scalar}
+            data_vars = {}
+            for k, v in result.items():
+                if isinstance(v, xr.DataArray):
+                    data_vars[k] = v
+                else:
+                    # If they returned numpy/scalar, wrap it.
+                    # If it matches the chunk shape, assume same dims as one_chunk.
+                    v_arr = np.asarray(v)
+                    if v_arr.shape == tuple(one_chunk.sizes[d] for d in dim_names):
+                        data_vars[k] = xr.DataArray(v_arr, dims=dim_names)
+                    else:
+                        # Scalar or unknown shape: store as 0-d DataArray
+                        data_vars[k] = xr.DataArray(v_arr)
+            out_ds = xr.Dataset(data_vars=data_vars)
+
+        else:
+            # Scalar/ndarray fallback
+            v_arr = np.asarray(result)
+            if v_arr.shape == tuple(one_chunk.sizes[d] for d in dim_names):
+                out_ds = xr.Dataset(
+                    data_vars={"output": xr.DataArray(v_arr, dims=dim_names)}
+                )
+            else:
+                out_ds = xr.Dataset(
+                    data_vars={"output": xr.DataArray(v_arr)}
+                )
+
+        # ---- 4) Build an empty template with correct dims/coords ----
+        # We create variables with the same dims/dtypes as out_ds, but filled with empty data.
+        template_vars = {}
+        for var_name, da in out_ds.data_vars.items():
+            # Build empty (all-NaN) array with the same shape as da
+            shape = tuple(da.sizes[d] for d in da.dims)
+            dtype = da.dtype
+
+            # Use NaN fill for floats; for ints/bools, use zeros (or pick a sentinel)
+            if np.issubdtype(dtype, np.floating):
+                empty = np.full(shape, np.nan, dtype=dtype)
+            else:
+                empty = np.zeros(shape, dtype=dtype)
+
+            template_vars[var_name] = xr.DataArray(empty, dims=da.dims)
+
+        template = xr.Dataset(data_vars=template_vars)
+
+        # Carry over any coords from out_ds (if present), else inherit from one_chunk where dims match
+        # (This helps keep 'time', 'X', 'Y' coordinates aligned when the output includes them.)
+        for c in out_ds.coords:
+            template = template.assign_coords({c: out_ds.coords[c]})
+
+        # If output didn’t include coords but shares input dims, carry input coords for those dims
+        for dim in template.dims:
+            if dim in one_chunk.coords and dim not in template.coords:
+                template = template.assign_coords({dim: one_chunk.coords[dim]})
+
+        return template
+
+    
     def _generate_template_xarray(self, ds):
         if self.output_template is not None:
             return self._generate_template_xarray_from_user(ds)
         else:
             print("AUTO")
-            return self._autogenerate_template_xarray(ds)
+            return self._autogenerate_template_xarray_tuning(ds)
 
     def _user_function_wrapper(self, ds, *args):
         """

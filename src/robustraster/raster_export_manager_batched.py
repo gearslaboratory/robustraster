@@ -16,8 +16,14 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
+# For exponential backoff
+import time
+import random
+import ee
+
+
 class RasterExportProcessor:
-    def __init__(self, user_function_handler=None, **kwargs):
+    def __init__(self, user_function_handler=None, ee_sempahore=None, **kwargs):
         """
         Initialize ExportProcessor.
         - If a UserFunctionHandler instance is provided, use it.
@@ -26,6 +32,7 @@ class RasterExportProcessor:
         :param user_function_handler: Optional existing UserFunctionHandler object.
         """
         self.user_function_handler = user_function_handler
+        self.ee_semaphore = ee_sempahore
         self.kwargs = kwargs
 
         self._first_dim = None
@@ -37,6 +44,50 @@ class RasterExportProcessor:
 
         # For the naming scheme of my output files
         self._tile_id = None
+
+    def _is_ee_retryable_error(self, exc: Exception) -> bool:
+        msg = str(exc).lower()
+
+        retry_signals = [
+            "too many requests",                 # ✅ your exact error (HTTP 429)
+            "request was rejected",
+            "request rate",
+            "concurrency limit",
+            "rate or concurrency",
+            "rate limit",
+            "quota exceeded",
+            "resource exhausted",
+            "backend error",
+            "internal error",
+            "timed out",
+            "timeout",
+            "throttl",
+        ]
+
+        return any(s in msg for s in retry_signals)
+
+    def ee_call_with_backoff(self, fn, max_retries=8, base_delay=1.0, max_delay=60.0):
+        """
+        Run fn() with exponential backoff + jitter on retryable EE errors.
+        """
+        for attempt in range(max_retries):
+            try:
+                return fn()
+            except Exception as e:
+                # If it's not an EEException or doesn't look retryable, fail fast
+                if not isinstance(e, ee.ee_exception.EEException) and not self._is_ee_retryable_error(e):
+                    raise
+
+                if not self._is_ee_retryable_error(e):
+                    raise
+
+                delay = min(max_delay, base_delay * (2 ** attempt))
+                delay *= (0.5 + random.random())  # jitter in [0.5x, 1.5x]
+
+                print(f"[robustraster][EE backoff] attempt {attempt+1}/{max_retries}, sleeping {delay:.2f}s: {e}")
+                time.sleep(delay)
+
+        raise RuntimeError(f"Earth Engine call failed after {max_retries} retries")
 
     def _iter_chunk_batches(
         self,
@@ -242,7 +293,18 @@ class RasterExportProcessor:
         - result: the result of applying the function to the dataframe.
         """
 
-        df_input = ds.to_dataframe().reset_index()
+        #df_input = ds.to_dataframe().reset_index()
+        def _pull_df():
+            return ds.to_dataframe().reset_index()
+
+        if self.ee_semaphore is not None and self._data_source == "ee":
+            with self.ee_semaphore:
+                print("SEMPAHORE!!!!")
+                df_input = self.ee_call_with_backoff(_pull_df)
+        else:
+            # local data sources just pull normally
+            df_input = _pull_df()
+
         df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
         df_output = df_output.set_index(list(ds.dims))
         ds_output = df_output.to_xarray()

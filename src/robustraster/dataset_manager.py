@@ -55,7 +55,7 @@ class RasterDataset(DataReaderInterface):
     >>> raster_path_list = ['./raster1.tif', './raster2.tif']
     >>> local_raster = input_driver.RasterDataset(raster_path_list)
     """
-    def __init__(self, file_path: str, dataset_kwargs: dict) -> None:
+    def __init__(self, file_path: str, dataset_config: dict) -> None:
         """
         Initialize a RasterDataset instance.
 
@@ -66,8 +66,8 @@ class RasterDataset(DataReaderInterface):
         >>> reader = RasterDataset("/path/to/raster.tif")
         """
         self._file_path = file_path
-        self._xarray_data = self._read_data(dataset_kwargs)
-       # self._xarray_data = self._read_timeseries_geotiffs_to_dataset(dataset_kwargs)
+        self._xarray_data = self._read_data(dataset_config)
+       # self._xarray_data = self._read_timeseries_geotiffs_to_dataset(dataset_config)
     
     @property
     def dataset(self):
@@ -81,11 +81,11 @@ class RasterDataset(DataReaderInterface):
         """
         return self._xarray_data
 
-    def _read_data(self, dataset_kwargs=None) -> xr.Dataset:
+    def _read_data(self, dataset_config=None) -> xr.Dataset:
         """
         Read one or many rasters and return an xarray.Dataset with variables on (time, X, Y).
 
-        dataset_kwargs (optional):
+        dataset_config (optional):
         - chunks: dict, e.g. {"X": 1024, "Y": 1024}
         - time_dim: str, default "time"
         - band_names: {int: str} mapping (1-based band index -> var name)
@@ -96,7 +96,7 @@ class RasterDataset(DataReaderInterface):
         import rasterio
         import rioxarray as rxr
 
-        dataset_kwargs = dataset_kwargs or {}
+        dataset_config = dataset_config or {}
 
         # Inputs -> list
         raster_paths = [self._file_path] if isinstance(self._file_path, str) else list(self._file_path)
@@ -104,12 +104,12 @@ class RasterDataset(DataReaderInterface):
             raise ValueError("No raster paths were provided.")
 
         # Config
-        chunks = dataset_kwargs.get("chunks", {})
+        chunks = dataset_config.get("chunks", {})
         CHUNK_X = int(chunks.get("X", 1024))
         CHUNK_Y = int(chunks.get("Y", 1024))
-        time_dim = dataset_kwargs.get("time_dim", "time")
-        band_names_override = dataset_kwargs.get("band_names", {})
-        prefer_desc = bool(dataset_kwargs.get("prefer_desc_over_bandnames", True))
+        time_dim = dataset_config.get("time_dim", "time")
+        band_names_override = dataset_config.get("band_names", {})
+        prefer_desc = bool(dataset_config.get("prefer_desc_over_bandnames", True))
 
         # Build simple integer time indices [0..N-1]
         ts_list = list(range(len(raster_paths)))
@@ -254,11 +254,11 @@ class RasterDataset(DataReaderInterface):
         return combined
 
     """
-    def _read_data(self, dataset_kwargs=None) -> xr.Dataset:
+    def _read_data(self, dataset_config=None) -> xr.Dataset:
         
         Read one or many rasters and return an xarray.Dataset with variables on (time, X, Y).
 
-        dataset_kwargs (optional):
+        dataset_config (optional):
         - chunks: dict, e.g. {"X": 1024, "Y": 1024}
         - time_dim: str, default "time"
         - timestamps: list-like or callable(path)->(int|str|np.datetime64)
@@ -274,7 +274,7 @@ class RasterDataset(DataReaderInterface):
         import rasterio
         import rioxarray as rxr
 
-        dataset_kwargs = dataset_kwargs or {}
+        dataset_config = dataset_config or {}
 
         # Inputs -> list
         raster_paths = [self._file_path] if isinstance(self._file_path, str) else list(self._file_path)
@@ -282,21 +282,21 @@ class RasterDataset(DataReaderInterface):
             raise ValueError("No raster paths were provided.")
 
         # Config
-        chunks = dataset_kwargs.get("chunks", {})
+        chunks = dataset_config.get("chunks", {})
         CHUNK_X = int(chunks.get("X", 1024))
         CHUNK_Y = int(chunks.get("Y", 1024))
-        time_dim = dataset_kwargs.get("time_dim", "time")
-        resampling = dataset_kwargs.get("resampling", "nearest")
-        band_names_override = dataset_kwargs.get("band_names", {})
-        prefer_desc = bool(dataset_kwargs.get("prefer_desc_over_bandnames", True))
-        copy_attrs = bool(dataset_kwargs.get("copy_attrs_from_template", True))
+        time_dim = dataset_config.get("time_dim", "time")
+        resampling = dataset_config.get("resampling", "nearest")
+        band_names_override = dataset_config.get("band_names", {})
+        prefer_desc = bool(dataset_config.get("prefer_desc_over_bandnames", True))
+        copy_attrs = bool(dataset_config.get("copy_attrs_from_template", True))
 
 
         ts_list = list(range(len(raster_paths)))
         # --------------------------
         # Build timestamps / indices
         # -------------------------
-        timestamps_arg = dataset_kwargs.get("timestamps", None)
+        timestamps_arg = dataset_config.get("timestamps", None)
 
         def _guess_timestamp_from_name(fp: str):
             for pat in [
@@ -344,7 +344,7 @@ class RasterDataset(DataReaderInterface):
         # --------------------------
         # Optional template handling
         # --------------------------
-        template = dataset_kwargs.get("template", None)
+        template = dataset_config.get("template", None)
         ref_da = None
         if template is not None:
             if isinstance(template, (xr.DataArray, xr.Dataset)):
@@ -622,7 +622,7 @@ class EarthEngineDataset(DataReaderInterface):
     >>> print(earth_engine.dataset)
     """
 
-    def __init__(self, image_collection: ee.imagecollection.ImageCollection, dataset_kwargs: dict) -> None:
+    def __init__(self, image_collection: ee.imagecollection.ImageCollection, dataset_config: dict) -> None:
         """
         Instantiate the EarthEngineDataset class. To instantiate an EarthEngineDataset object, 
         the user must pass in a dictionary object of parameters. Below is an example
@@ -709,7 +709,7 @@ class EarthEngineDataset(DataReaderInterface):
         - parameters (dict): A dictionary containing user parameters to query Earth Engine.
         """
 
-        self._xarray_data = self._read_data(image_collection, dataset_kwargs)
+        self._xarray_data = self._read_data(image_collection, dataset_config)
         self._max_chunks_limit = self._auto_compute_max_chunks()
     
     @property
@@ -866,7 +866,7 @@ class EarthEngineDataset(DataReaderInterface):
         except ee.EEException:
             raise ee.EEException(f"Unrecognized argument type {type(collection)} to convert to an ImageCollection.")
 
-    def _read_data(self, image_collection, dataset_kwargs) -> xr.Dataset:
+    def _read_data(self, image_collection, dataset_config) -> xr.Dataset:
         """
         A private method not intended for user use. Read Earth Engine data and 
         convert it to xarray format.
@@ -885,17 +885,18 @@ class EarthEngineDataset(DataReaderInterface):
         # Obtain all of the user's optional dataset parameters
         # Use xr.open_dataset
 
-        if dataset_kwargs['geometry'] and isinstance(dataset_kwargs['geometry'], ee.geometry.Geometry):
-            sorted_ic = sorted_ic.filterBounds(dataset_kwargs['geometry'])
-            clipped_ic = clip_ic(sorted_ic, dataset_kwargs['geometry'])
-        elif dataset_kwargs['geometry'] and not isinstance(dataset_kwargs['geometry'], ee.geometry.Geometry):
-            dataset_kwargs['geometry'] = self._vector_to_geometry(dataset_kwargs['geometry'])
-            sorted_ic = sorted_ic.filterBounds(dataset_kwargs['geometry'])
-            clipped_ic = clip_ic(sorted_ic, dataset_kwargs['geometry'])
+        if dataset_config['geometry'] and isinstance(dataset_config['geometry'], ee.geometry.Geometry):
+            sorted_ic = sorted_ic.filterBounds(dataset_config['geometry'])
+            clipped_ic = clip_ic(sorted_ic, dataset_config['geometry'])
+        elif dataset_config['geometry'] and not isinstance(dataset_config['geometry'], ee.geometry.Geometry):
+            dataset_config['geometry'] = self._vector_to_geometry(dataset_config['geometry'])
+            sorted_ic = sorted_ic.filterBounds(dataset_config['geometry'])
+            clipped_ic = clip_ic(sorted_ic, dataset_config['geometry'])
         xarray_data = xr.open_dataset(
             clipped_ic,
             engine='ee',
-            **dataset_kwargs
+            executor_kwargs = {"max_workers": 1},
+            **dataset_config
         )
         
         return xarray_data

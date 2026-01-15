@@ -2,10 +2,10 @@ import math
 import ee
 
 
-def ee_covering_grid_tiles(aoi, crs: str, scale: float, tile_max_pixels: int):
+def ee_covering_grid_tiles(aoi, crs: str, scale: float, max_pixels_per_tile: int):
     """
     Create rectangular grid tiles covering an AOI, aligned to the given CRS.
-    Tiles are sized by sqrt(tile_max_pixels) * scale.
+    Tiles are sized by sqrt(max_pixels_per_tile) * scale.
 
     If AOI already fits inside one tile, return a FeatureCollection with a single AOI feature.
 
@@ -17,7 +17,7 @@ def ee_covering_grid_tiles(aoi, crs: str, scale: float, tile_max_pixels: int):
         CRS string like "EPSG:3310".
     scale : float
         Pixel scale (meters).
-    tile_max_pixels : int
+    max_pixels_per_tile : int
         Maximum number of pixels per tile (controls tile side length).
 
     Returns
@@ -35,9 +35,9 @@ def ee_covering_grid_tiles(aoi, crs: str, scale: float, tile_max_pixels: int):
         aoi_geom = ee.Geometry(aoi)
 
     # Compute tile size from pixel budget
-    tile_side_px = int(math.floor(math.sqrt(int(tile_max_pixels))))
+    tile_side_px = int(math.floor(math.sqrt(int(max_pixels_per_tile))))
     if tile_side_px <= 0:
-        raise ValueError("tile_max_pixels must be > 0")
+        raise ValueError("max_pixels_per_tile must be > 0")
 
     tile_side_m = float(tile_side_px) * float(scale)
     if tile_side_m <= 0:
