@@ -189,6 +189,7 @@ class UserFunctionHandler:
                 return
             
         while True:
+            print("TUNER!!!")
             self._iteration_count += 1
             
             test = xr.map_blocks(self._user_function_wrapper, 
@@ -211,13 +212,16 @@ class UserFunctionHandler:
                 bigger_slice = self._get_bigger_slice(ds, ds_slice)
     
                 # Rerun test with this new chunk size
-                return self._get_tuned_xarray(ds, bigger_slice)
+                return self._get_tuned_xarray(ds, bigger_slice, template_xarray)
 
             # Check if two or more iterations have been performed
             elif len(df) >= 2:
                 # Get the last two Tparallel values
                 previous_tparallel = df['Tparallel(pixel/worker)'].iloc[-2]
                 latest_tparallel = df['Tparallel(pixel/worker)'].iloc[-1]
+
+                print(previous_tparallel)
+                print(latest_tparallel)
 
                 # If latest is greater or equal to previous, return chunked dataset
                 if latest_tparallel >= previous_tparallel:
@@ -247,14 +251,14 @@ class UserFunctionHandler:
                             return 
 
                         # If small_diff_count is less than 3, rerun with the same chunk size
-                        return self._get_tuned_xarray(ds, ds_slice)
+                        return self._get_tuned_xarray(ds, ds_slice, template_xarray)
 
                     # If the difference is greater than 1%, adjust the chunk size and rerun the test
                     else:
                         print("Difference is GREATER than 1%")
                         self._small_diff_count = 0
                         bigger_slice = self._get_bigger_slice(ds, ds_slice)
-                        return self._get_tuned_xarray(ds, bigger_slice)
+                        return self._get_tuned_xarray(ds, bigger_slice, template_xarray)
             
             # Break the loop if max_iterations is set and limit is reached
             if self.max_iterations is not None and self._iteration_count >= self.max_iterations:
@@ -392,9 +396,18 @@ class UserFunctionHandler:
         # Dynamically determine dimension names
         dim_names = list(ds.sizes.keys())
 
-        one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
+        #one_chunk_slices = {dim: slice(0, ds.chunks[dim][0]) for dim in dim_names}
+        #one_chunk = ds.isel(**one_chunk_slices)
+        one_chunk_slices = {}
+        for dim in dim_names:
+            if ds.chunks and dim in ds.chunks:
+                stop = ds.chunks[dim][0]
+            else:
+                stop = ds.sizes[dim]   # fallback when not chunked
+            one_chunk_slices[dim] = slice(0, stop)
+
         one_chunk = ds.isel(**one_chunk_slices)
-        
+
         # Apply the processing function to this chunk
         processed_chunk = self._user_function_wrapper(one_chunk)
         
@@ -425,116 +438,13 @@ class UserFunctionHandler:
         )
         
         return template
-    
-    def _autogenerate_template_xarray_tuning(self, ds: xr.Dataset) -> xr.Dataset:
-        """
-        Automatically generate a template xarray Dataset that matches the structure
-        of the user function output. Robust to non-dask-backed datasets (ds.chunks may be empty).
 
-        Strategy:
-        1) Determine the spatial/temporal dimension names from the input dataset.
-        2) Extract a small representative slice ("one chunk") using ds.chunks when present,
-            otherwise ds.sizes as a fallback.
-        3) Run the user function on that slice to infer output variables/dtypes/dims.
-        4) Build an empty template Dataset with correct coords/dims and variable metadata.
-        """
-
-        # ---- 1) Determine dimension names (use your existing logic if you already have it) ----
-        # If you already compute dim_names elsewhere, keep that. Here’s a safe default:
-        dim_names = list(ds.dims)  # e.g. ['time', 'X', 'Y'] or whatever your dataset uses
-        print(dim_names)
-
-        # ---- 2) Build "one chunk" slice robustly ----
-        one_chunk_slices = {}
-        for dim in dim_names:
-            if ds.chunks and dim in ds.chunks:
-                stop = ds.chunks[dim][0]
-            else:
-                stop = ds.sizes[dim]  # fallback when not chunked
-            one_chunk_slices[dim] = slice(0, stop)
-
-        one_chunk = ds.isel(**one_chunk_slices)
-
-        # ---- 3) Apply the user function to infer output structure ----
-        # Use your existing call path if you have wrappers; this is the generic version.
-        # Assumes you store:
-        #   self.user_function, self.user_function_args, self.user_function_kwargs
-        result = self.user_function(one_chunk, *self.args, **self.kwargs)
-
-        # Normalize result into a Dataset
-        if isinstance(result, xr.Dataset):
-            out_ds = result
-
-        elif isinstance(result, xr.DataArray):
-            name = result.name or "output"
-            out_ds = result.to_dataset(name=name)
-
-        elif isinstance(result, dict):
-            # dict of {name: DataArray/ndarray/scalar}
-            data_vars = {}
-            for k, v in result.items():
-                if isinstance(v, xr.DataArray):
-                    data_vars[k] = v
-                else:
-                    # If they returned numpy/scalar, wrap it.
-                    # If it matches the chunk shape, assume same dims as one_chunk.
-                    v_arr = np.asarray(v)
-                    if v_arr.shape == tuple(one_chunk.sizes[d] for d in dim_names):
-                        data_vars[k] = xr.DataArray(v_arr, dims=dim_names)
-                    else:
-                        # Scalar or unknown shape: store as 0-d DataArray
-                        data_vars[k] = xr.DataArray(v_arr)
-            out_ds = xr.Dataset(data_vars=data_vars)
-
-        else:
-            # Scalar/ndarray fallback
-            v_arr = np.asarray(result)
-            if v_arr.shape == tuple(one_chunk.sizes[d] for d in dim_names):
-                out_ds = xr.Dataset(
-                    data_vars={"output": xr.DataArray(v_arr, dims=dim_names)}
-                )
-            else:
-                out_ds = xr.Dataset(
-                    data_vars={"output": xr.DataArray(v_arr)}
-                )
-
-        # ---- 4) Build an empty template with correct dims/coords ----
-        # We create variables with the same dims/dtypes as out_ds, but filled with empty data.
-        template_vars = {}
-        for var_name, da in out_ds.data_vars.items():
-            # Build empty (all-NaN) array with the same shape as da
-            shape = tuple(da.sizes[d] for d in da.dims)
-            dtype = da.dtype
-
-            # Use NaN fill for floats; for ints/bools, use zeros (or pick a sentinel)
-            if np.issubdtype(dtype, np.floating):
-                empty = np.full(shape, np.nan, dtype=dtype)
-            else:
-                empty = np.zeros(shape, dtype=dtype)
-
-            template_vars[var_name] = xr.DataArray(empty, dims=da.dims)
-
-        template = xr.Dataset(data_vars=template_vars)
-
-        # Carry over any coords from out_ds (if present), else inherit from one_chunk where dims match
-        # (This helps keep 'time', 'X', 'Y' coordinates aligned when the output includes them.)
-        for c in out_ds.coords:
-            template = template.assign_coords({c: out_ds.coords[c]})
-
-        # If output didn’t include coords but shares input dims, carry input coords for those dims
-        for dim in template.dims:
-            if dim in one_chunk.coords and dim not in template.coords:
-                template = template.assign_coords({dim: one_chunk.coords[dim]})
-
-        return template
-
-    
     def _generate_template_xarray(self, ds):
         if self.output_template is not None:
             return self._generate_template_xarray_from_user(ds)
         else:
             print("AUTO")
-            return self._autogenerate_template_xarray_tuning(ds)
+            return self._autogenerate_template_xarray(ds)
 
     def _user_function_wrapper(self, ds, *args):
         """
@@ -720,9 +630,11 @@ class UserFunctionHandler:
         ds = data_source.dataset
         ds_chunked = self._create_tuning_chunk(ds)
         ds_slice = self._get_starting_slice(ds_chunked)
-
-        template_xarray = self._generate_template_xarray(ds)
-        
+        print("STARTING SLICE...")
+        print(ds_slice)
+        template_xarray = self._generate_template_xarray(ds_slice)
+        print("TEMPLATE XARRAY")
+        print(template_xarray)
         return self._get_tuned_xarray(ds, ds_slice, template_xarray)
 '''    
     def apply_user_function(self, data_source: RasterDataset | EarthEngineDataset, 

@@ -82,12 +82,12 @@ def get_wall_time_and_memory():
     match = re.search(compute_time_pattern, content)
 
     # Step 3: If a match is found, extract the value and the unit
-    if match:
-        compute_time_value = match.group(1)  # The numeric value (e.g., "13.30")
-        compute_time_unit = match.group(2)  # The unit (e.g., "s")
-        compute_time_string = compute_time_value + " " + compute_time_unit
-    else:
-        print("Compute time not found.")
+    if not match:
+        raise ValueError("Compute time not found in the Dask report. IDK why it sometimes appears.")
+    
+    compute_time_value = match.group(1)  # The numeric value (e.g., "13.30")
+    compute_time_unit = match.group(2)  # The unit (e.g., "s")
+    compute_time_string = compute_time_value + " " + compute_time_unit
 
     # Let's revise the regex pattern to capture the data more flexibly
     memory_pattern_final = r'"memory",\["min: [^"]+",\s*"max: ([0-9.]+) ([a-zA-Z]+)",\s*"mean: [^"]+"\]'
