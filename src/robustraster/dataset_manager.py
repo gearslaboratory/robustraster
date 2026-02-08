@@ -895,10 +895,15 @@ class EarthEngineDataset(DataReaderInterface):
         xarray_data = xr.open_dataset(
             clipped_ic,
             engine='ee',
-            executor_kwargs = {"max_workers": 1},
+            #executor_kwargs = {"max_workers": 1},
             **dataset_config
         )
-        
+
+        if is_degenerate(xarray_data):
+            raise DegenerateTileError(f"Degenerate tile dims={dict(xarray_data.sizes)}")
+            # mark tile as skipped and return early from your tile loop
+        print("LOOPDOLOOP")
+        print(xarray_data)
         return xarray_data
     
 def clip_ic(ic, geom):
@@ -909,3 +914,14 @@ def clip_ic(ic, geom):
         return ee.Image(img).clip(geom)
 
     return ee.ImageCollection(ic).map(_clip)
+
+# If a tile only has one pixel.
+def is_degenerate(ds, x_dim=("x", "X"), y_dim=("y", "Y")):
+    xd = next((d for d in x_dim if d in ds.dims), None)
+    yd = next((d for d in y_dim if d in ds.dims), None)
+    if xd is None or yd is None:
+        return True  # conservative
+    return (ds.sizes[xd] < 2) or (ds.sizes[yd] < 2)
+
+class DegenerateTileError(Exception):
+    pass

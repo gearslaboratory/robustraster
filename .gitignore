@@ -52,3 +52,14 @@ geometry/US.shp
 geometry/US.prj
 geometry/US.dbf
 geometry/US.cpg
+demos/US_NDVI_Tiles_30m_40MIL
+
+src/robustraster/__pycache__/ee_grid_tiles.cpython-310.pyc
+src/robustraster/__pycache__/format_time.cpython-310.pyc
+src/robustraster/__pycache__/hooks.cpython-310.pyc
+src/robustraster/__pycache__/raster_export_manager_batched.cpython-310.pyc
+src/robustraster/__pycache__/reports_setup.cpython-310.pyc
+src/robustraster/__pycache__/run_manager.cpython-310.pyc
+src/robustraster/__pycache__/vector_export_manager.cpython-310.pyc
+src/robustraster/__pycache__/vrt_export_manager.cpython-310.pyc
+src/robustraster/__pycache__/dask_docker_cluster_manager.cpython-310.pyc

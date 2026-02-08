@@ -1,4 +1,4 @@
-from .dataset_manager import RasterDataset, EarthEngineDataset
+from .dataset_manager import RasterDataset, EarthEngineDataset, DegenerateTileError
 from .dask_cluster_manager import DaskClusterManager
 from .dask_docker_cluster_manager import DDClusterManager  # NEW: Docker-based cluster manager
 #from .raster_export_manager import RasterExportProcessor
@@ -231,21 +231,27 @@ def run(
                 if success_marker.exists():
                     print(f"[robustraster] ✅ Tile {tile_i} already succeeded; skipping.")
                     continue
-
-                data_source = DatasetAdapterFactory(source, dataset, tile_dataset_config, chunks=chunks)
                 
-                print("[robustraster] Running user function...")
-                processor._tile_id = tile_i
+                while True:
+                    try:
+                        data_source = DatasetAdapterFactory(source, dataset, tile_dataset_config, chunks=chunks)
+                    except DegenerateTileError as e:
+                        print(f"[robustraster] ⚠️ Skipping tile {tile_i}: {e}")
+                        # optionally write a skip marker so resume logic doesn't keep re-hitting it
+                        write_failure(tile_i, out_root, e)  # or write_skip(...) if you add one
+                        break
+                    try:
+                        #if tile_i == 2:
+                        #    raise RuntimeError("TEST: simulated tile failure")
+                        
+                        print("[robustraster] Running user function...")
+                        processor._tile_id = tile_i
+                        processor.run_and_export_results(data_source)
+                        write_success(tile_i, out_root)
+                    except Exception as e:
+                        write_failure(tile_i, out_root, e)
+                        raise
 
-                try:
-                    #if tile_i == 2:
-                    #    raise RuntimeError("TEST: simulated tile failure")
-                    
-                    processor.run_and_export_results(data_source)
-                    write_success(tile_i, out_root)
-                except Exception as e:
-                    write_failure(tile_i, out_root, e)
-                    raise
             
             client.close()
             client.shutdown()

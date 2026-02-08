@@ -66,26 +66,29 @@ class RasterExportProcessor:
 
         return any(s in msg for s in retry_signals)
 
-    def ee_call_with_backoff(self, fn, max_retries=8, base_delay=1.0, max_delay=60.0):
+    def ee_call_with_backoff(self, fn, max_retries=100, base_delay=1.0, max_delay=60.0):
         """
         Run fn() with exponential backoff + jitter on retryable EE errors.
         """
         for attempt in range(max_retries):
             try:
+                print("APPLE")
                 return fn()
             except Exception as e:
-                # If it's not an EEException or doesn't look retryable, fail fast
-                if not isinstance(e, ee.ee_exception.EEException) and not self._is_ee_retryable_error(e):
-                    raise
-
+                # Retry ONLY if this looks like an EE quota / throttling error
                 if not self._is_ee_retryable_error(e):
+                    print("ORANGE")
                     raise
 
                 delay = min(max_delay, base_delay * (2 ** attempt))
                 delay *= (0.5 + random.random())  # jitter in [0.5x, 1.5x]
 
-                print(f"[robustraster][EE backoff] attempt {attempt+1}/{max_retries}, sleeping {delay:.2f}s: {e}")
+                print(
+                    f"[robustraster][EE backoff] "
+                    f"attempt {attempt+1}/{max_retries}, sleeping {delay:.2f}s: {e}"
+                )
                 time.sleep(delay)
+
 
         raise RuntimeError(f"Earth Engine call failed after {max_retries} retries")
 
@@ -238,6 +241,7 @@ class RasterExportProcessor:
                 output_folder = Path(self.kwargs.get("output_folder"))
                 report_path = setup_dask_reports(output_folder, tile_id=self._tile_id, slice_tag=None)
                 with performance_report(filename=report_path):
+                    print("LINE BEFORE result.compute()")
                     result.compute() 
 
             elif self.kwargs.get("report") is True and self._tile_id is None:
@@ -292,15 +296,13 @@ class RasterExportProcessor:
         Returns:
         - result: the result of applying the function to the dataframe.
         """
-
+        print("_user_function_export_wrapper")
         #df_input = ds.to_dataframe().reset_index()
         def _pull_df():
             return ds.to_dataframe().reset_index()
 
-        if self.ee_semaphore is not None and self._data_source == "ee":
-            with self.ee_semaphore:
-                print("SEMPAHORE!!!!")
-                df_input = self.ee_call_with_backoff(_pull_df)
+        if self._data_source == "ee":
+            df_input = self.ee_call_with_backoff(_pull_df)
         else:
             # local data sources just pull normally
             df_input = _pull_df()
@@ -429,6 +431,14 @@ class RasterExportProcessor:
         # Pull x/y coordinate arrays (these are typically pixel centers)
         x = stacked.coords["x"].values
         y = stacked.coords["y"].values
+        
+        
+        nx = stacked.sizes.get("x", 0)
+        ny = stacked.sizes.get("y", 0)
+
+        # if nx < 2 or ny < 2:
+        #     print(f"Skipping tile {self._tile_id}: degenerate tile (x={nx}, y={ny})")
+        #     return
 
         # Compute pixel resolution from coordinate spacing
         # (Use abs because y usually decreases)
