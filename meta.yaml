@@ -1,6 +1,6 @@
 package:
   name: robustraster
-  version: "0.4.1"
+  version: "0.4.2"
 
 source:
   path: .
@@ -53,4 +53,4 @@ about:
   summary: "run() function + hooks"
   license: "MIT"
   description: |
-    Version 0.4.1 is a WIP version that tries to reintegrate Docker. 
+    Version 0.4.2 is a WIP version that tries to reintegrate Docker. Plus, fixed raster and can do full NDVI run of GEE US.

@@ -6,6 +6,9 @@ from typing import Optional, Dict, Any
 import docker
 from dask.distributed import Client
 
+import time
+from distributed import Client
+
 class DDClusterManager:
     """
     Docker-backed Dask cluster manager.
@@ -113,49 +116,40 @@ class DDClusterManager:
         for i in range(1, n_workers + 1):
             self._launch_worker(i, threads_per_worker, memory_limit, volumes)
         
-        self.dask_client = Client("tcp://127.0.0.1:8786")
+        #self.dask_client = Client("tcp://127.0.0.1:8786")
+        self.dask_client = self._connect_client_with_retry()
 
+    def _connect_client_with_retry(
+        self,
+        attempts: int = 40,
+        delay: float = 0.25,
+    ) -> Client:
+        """
+        Connect to the Dask scheduler using the *actual* published host port,
+        retrying until the scheduler is ready.
+        """
+        # Make sure we have the latest container info
+        self.scheduler.reload()
 
-"""
-# Connect client (retry while scheduler boots)
-import time, socket
-address = ("localhost", 8786)
-deadline = time.time() + 45
-while time.time() < deadline:
-    with socket.socket() as s:
-        s.settimeout(1.5)
-        try:
-            s.connect(address)
-            break
-        except OSError:
-            time.sleep(0.5)
-# Final connect via Dask
-self.dask_client = Client("tcp://localhost:8786", timeout="30s")
-print("Dask dashboard is available at: http://localhost:8787")
-def shutdown(self) -> None:
-        # Stop and remove workers
-        for worker in self.workers:
-            try:
-                worker.stop()
-            except Exception:
-                pass
-            try:
-                worker.remove()
-            except Exception:
-                pass
-            print(f"Stopped & removed worker {worker.short_id}")
-        self.workers = []
+        port_info = self.scheduler.attrs["NetworkSettings"]["Ports"].get("8786/tcp")
+        if not port_info:
+            raise RuntimeError("Scheduler port 8786 is not published")
 
-        # Stop and remove scheduler
-        if self.scheduler:
+        host_port = port_info[0]["HostPort"]
+        address = f"tcp://127.0.0.1:{host_port}"
+
+        last_err = None
+        for _ in range(attempts):
             try:
-                self.scheduler.stop()
-            except Exception:
-                pass
-            try:
-                self.scheduler.remove()
-            except Exception:
-                pass
-            print(f"Stopped & removed scheduler {self.scheduler.short_id}")
-            self.scheduler = None
-"""
+                return Client(address, timeout="2s")
+            except Exception as e:
+                last_err = e
+                time.sleep(delay)
+
+        # If we get here, connection never succeeded
+        logs = self.scheduler.logs(tail=200).decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"Could not connect to Dask scheduler at {address}\n"
+            f"Last error: {last_err}\n\n"
+            f"Scheduler logs:\n{logs}"
+        )
