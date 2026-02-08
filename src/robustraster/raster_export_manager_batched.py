@@ -23,7 +23,7 @@ import ee
 
 
 class RasterExportProcessor:
-    def __init__(self, user_function_handler=None, ee_sempahore=None, **kwargs):
+    def __init__(self, user_function_handler=None, ee_semaphore=None, **kwargs):
         """
         Initialize ExportProcessor.
         - If a UserFunctionHandler instance is provided, use it.
@@ -32,7 +32,7 @@ class RasterExportProcessor:
         :param user_function_handler: Optional existing UserFunctionHandler object.
         """
         self.user_function_handler = user_function_handler
-        self.ee_semaphore = ee_sempahore
+        self.ee_semaphore = ee_semaphore
         self.kwargs = kwargs
 
         self._first_dim = None
