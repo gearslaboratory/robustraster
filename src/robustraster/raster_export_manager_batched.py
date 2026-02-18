@@ -72,12 +72,10 @@ class RasterExportProcessor:
         """
         for attempt in range(max_retries):
             try:
-                print("APPLE")
                 return fn()
             except Exception as e:
                 # Retry ONLY if this looks like an EE quota / throttling error
                 if not self._is_ee_retryable_error(e):
-                    print("ORANGE")
                     raise
 
                 delay = min(max_delay, base_delay * (2 ** attempt))
@@ -296,7 +294,6 @@ class RasterExportProcessor:
         Returns:
         - result: the result of applying the function to the dataframe.
         """
-        print("_user_function_export_wrapper")
         #df_input = ds.to_dataframe().reset_index()
         def _pull_df():
             return ds.to_dataframe().reset_index()
@@ -418,7 +415,17 @@ class RasterExportProcessor:
 
 
     def _export_to_geotiff(self, stacked):
-        output_folder = self.kwargs.get('output_folder', 'tiles')
+        original_output_folder = self.kwargs.get('output_folder', 'tiles')
+        
+        # Check for override (e.g. from Docker environment)
+        override_output_folder = os.environ.get("ROBUSTRASTER_OVERRIDE_OUTPUT")
+        
+        if override_output_folder:
+            output_folder = override_output_folder
+            # print(f"[robustraster] Using override output folder: {output_folder}")
+        else:
+            output_folder = original_output_folder
+
         os.makedirs(output_folder, exist_ok=True)
         output_path = os.path.join(output_folder, f"{self._output_basename}.tif")
 

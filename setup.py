@@ -8,12 +8,12 @@ def parse_requirements(filename):
 
 setup(
     name="robustraster",
-    version="0.4.0",
+    version="0.4.2",
     python_requires=">=3.10.16,<3.11",
     author="Adriano Matos",
     author_email="adrianom@unr.edu",
     description="Running user-defined functions on large datasets via out-of-core computation simplfied.",
-    long_description=open("README.MD").read(),
+    long_description=open("README.md").read(),
     url="",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
@@ -22,6 +22,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    install_requires=parse_requirements(r'R:\SCRATCH\adrianom\code\big-raster-helper\requirements.txt'),  # Use the lock file
+    install_requires=parse_requirements(os.path.join(os.path.dirname(__file__), 'requirements.txt')),  # Use the lock file
     include_package_data=True,
 )

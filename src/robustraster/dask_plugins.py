@@ -6,14 +6,16 @@ import random
 import logging
 from distributed import WorkerPlugin
 
-def make_robust_computePixels(original_computePixels):
+def make_robust_ee_call(original_method, method_name=None):
     """
-    Wraps ee.data.computePixels with exponential backoff for
+    Wraps an ee.data method with exponential backoff for
     'Too Many Requests' (429) or other retryable errors.
     """
-    # Sentinel to avoid double-wrapping if the plugin is re-initialized
-    if getattr(original_computePixels, "_is_robust_wrapper", False):
-        return original_computePixels
+    # Sentinel to avoid double-wrapping
+    if getattr(original_method, "_is_robust_wrapper", False):
+        return original_method
+
+    method_name = method_name or getattr(original_method, "__name__", "unknown_method")
 
     def wrapper(*args, **kwargs):
         # Configuration for backoff
@@ -40,7 +42,7 @@ def make_robust_computePixels(original_computePixels):
 
         for attempt in range(max_retries):
             try:
-                return original_computePixels(*args, **kwargs)
+                return original_method(*args, **kwargs)
             except getattr(ee, 'EEException', Exception) as e:
                 msg = str(e).lower()
                 # Check if this is a retryable error
@@ -52,19 +54,37 @@ def make_robust_computePixels(original_computePixels):
                 # Add jitter: random factor between 0.5 and 1.5
                 delay *= (0.5 + random.random())
 
-                # Log the retry (this appears in Dask worker logs)
+                # Log the retry
                 logging.warning(
-                    f"[robustraster] EE rate limit hit (attempt {attempt+1}/{max_retries}). "
+                    f"[robustraster] EE rate limit hit in {method_name} (attempt {attempt+1}/{max_retries}). "
                     f"Retrying in {delay:.2f}s. Error: {e}"
                 )
                 
                 time.sleep(delay)
         
         # If we exit the loop, we ran out of retries
-        raise RuntimeError(f"Earth Engine computePixels failed after {max_retries} retries due to rate limiting.")
+        raise RuntimeError(f"Earth Engine {method_name} failed after {max_retries} retries due to rate limiting.")
 
     wrapper._is_robust_wrapper = True
     return wrapper
+
+def patch_ee_methods():
+    """
+    Patches standard ee.data methods with the robust backoff wrapper.
+    Can be called on both the client (main process) and workers.
+    """
+    if not hasattr(ee, "data"):
+        logging.warning("[robustraster] ee.data not found, cannot patch methods.")
+        return
+
+    methods_to_patch = ["computePixels", "computeValue", "getTile", "getValue"]
+    
+    for method_name in methods_to_patch:
+        if hasattr(ee.data, method_name):
+            original = getattr(ee.data, method_name)
+            wrapped = make_robust_ee_call(original, method_name=method_name)
+            setattr(ee.data, method_name, wrapped)
+            logging.info(f"[robustraster] Patched ee.data.{method_name} with backoff.")
 
 class EEPlugin(WorkerPlugin):
     def __init__(self):
@@ -74,25 +94,14 @@ class EEPlugin(WorkerPlugin):
         self.worker = worker
         try:
             # Assume credentials already exist at default location
-            # Note: The user typically runs ee.Initialize() on the client, which
-            # sets up credentials. On the worker, we might need to rely on
-            # environment variables or pre-existing auth if not explicitly passed.
-            # However, xee often handles some of this if credentials are picklable.
-            # We'll just ensure the library is initialized if possible.
             try:
                 ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
-            except Exception:
+            except Exception as e:
                 # If already initialized or detailed auth needed, this might fail or be skipped.
-                # Proceeding to patch anyway because xee might be using a session established elsewhere.
-                pass
+                logging.warning(f"[robustraster] ee.Initialize failed on worker: {e}")
             
-            # --- PATCH: Monkeypatch ee.data.computePixels ---
-            # This affects all calls made by xee or invalidation logic within this worker.
-            if hasattr(ee, "data") and hasattr(ee.data, "computePixels"):
-                logging.info("[robustraster] Patching ee.data.computePixels with backoff logic.")
-                ee.data.computePixels = make_robust_computePixels(ee.data.computePixels)
-            else:
-                logging.warning("[robustraster] Could not match ee.data.computePixels to patch it.")
+            # --- PATCH: Monkeypatch ee.data methods ---
+            patch_ee_methods()
 
         except Exception as e:
             # Don't crash the worker, just log the failure to setup EE plugin

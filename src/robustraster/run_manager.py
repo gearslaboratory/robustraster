@@ -5,7 +5,7 @@ from .dask_docker_cluster_manager import DDClusterManager  # NEW: Docker-based c
 from .raster_export_manager_batched import RasterExportProcessor
 from .vector_export_manager import VectorExportProcessor
 from .udf_manager import UserFunctionHandler
-from .dask_plugins import EEPlugin
+from .dask_plugins import EEPlugin, patch_ee_methods
 from .hooks import preview_dataset_hook
 from .ee_grid_tiles import ee_covering_grid_tiles, clip_tiles_to_aoi
 from .ee_grid_tiles import iter_tiles_from_fc
@@ -17,6 +17,7 @@ from dask import config
 from pathlib import Path
 import json
 import time
+import os
 
 def DatasetAdapterFactory(source, dataset, dataset_config=None, *, chunks=None):
     """
@@ -98,6 +99,13 @@ def run(
 
     try:
          # ========== PREVIEW DATASET ===========
+        if source == "ee":
+             try:
+                 # Ensure we have the backoff wrapper on the client side too!
+                 patch_ee_methods()
+             except Exception as e:
+                 print(f"[robustraster] Warning: could not patch EE methods on client: {e}")
+
         if preview_dataset:
             adapter = DatasetAdapterFactory(source, dataset, dataset_config, chunks=chunks)
             data_source = adapter
@@ -119,6 +127,60 @@ def run(
         if dask_use_docker:
             if not dask_docker_image:
                 raise ValueError("dask_docker_image is required when dask_use_docker=True")
+            
+            # --- Auto-mount Earth Engine Credentials ---
+            # Try to find credentials on the host
+            try:
+                # ee.oauth.get_credentials_path() returns the path to the credentials file
+                # e.g., ~/.config/earthengine/credentials
+                creds_path = ee.oauth.get_credentials_path()
+                if os.path.exists(creds_path):
+                    print(f"[robustraster] Found EE credentials at: {creds_path}")
+                    
+                    # Ensure volumes dict exists in dask_config
+                    dask_config = dask_config or {}
+                    volumes = dask_config.get("volumes", {})
+                    
+                    # mount to /root/.config/earthengine/credentials
+                    # Assuming the container runs as root. If not, this might need adjustment.
+                    container_path = "/root/.config/earthengine/credentials"
+                    
+                    # The volume format for docker-py (and likely dask-docker) is:
+                    # {host_path: {'bind': container_path, 'mode': 'ro'}}
+                    volumes[creds_path] = {'bind': container_path, 'mode': 'ro'}
+                    
+                    dask_config["volumes"] = volumes
+                    print(f"[robustraster] Mounting EE credentials to {container_path}")
+                else:
+                    print(f"[robustraster] Warning: EE credentials not found at {creds_path}. Workers may fail to authenticate.")
+            except Exception as e:
+                print(f"[robustraster] Warning: Failed to detect/mount EE credentials: {e}")
+
+            # --- Auto-mount Output Directory ---
+            # 1. Resolve host output path
+            output_folder_raw = export_config.get("output_folder", "tiles")
+            host_output_path = str(Path(output_folder_raw).resolve())
+            
+            # Create it on host if it doesn't exist, so Docker can mount it
+            os.makedirs(host_output_path, exist_ok=True)
+            
+            container_output_path = "/robustraster_output"
+            
+            print(f"[robustraster] Mounting output: {host_output_path} -> {container_output_path}")
+
+            # 2. Add to volumes
+            dask_config = dask_config or {}
+            volumes = dask_config.get("volumes", {})
+            
+            # Bind RW
+            volumes[host_output_path] = {'bind': container_output_path, 'mode': 'rw'}
+            dask_config["volumes"] = volumes
+            
+            # 3. Set environment variable for override
+            env_vars = dask_config.get("env_vars", {})
+            env_vars["ROBUSTRASTER_OVERRIDE_OUTPUT"] = container_output_path
+            dask_config["env_vars"] = env_vars
+
             cluster_manager = DDClusterManager(docker_image=dask_docker_image, **dask_docker_kwargs)
             cluster_manager.create_cluster(mode=dask_mode, **dask_config)
             client = cluster_manager.get_dask_client
@@ -216,10 +278,14 @@ def run(
             print("[robustraster] AOI tiling enabled. Streaming tiles in batches...")
 
             total_tiles = tiles_fc.size().getInfo()
+            if total_tiles == 0:
+                print("[robustraster] ⚠️ No tiles found covering the AOI. Check your geometry and scale.")
 
             out_root = export_config.get("output_folder", "tiles")
 
             # Process tiles sequentially, but retrieve geometries in batches
+            # Process tiles sequentially, but retrieve geometries in batches
+            data_source = None
             for tile_i, tile_geom in enumerate(iter_tiles_from_fc(clipped_tiles, batch_size=200), start=1):
                 tile_dataset_config = dict(dataset_config)
                 tile_dataset_config["geometry"] = tile_geom
@@ -251,12 +317,16 @@ def run(
                     except Exception as e:
                         write_failure(tile_i, out_root, e)
                         raise
+                    break # Success
 
-            
+            # Shutdown first, then close client
+            try:
+                client.shutdown()
+            except Exception:
+                pass
             client.close()
-            client.shutdown()
 
-            if export_config.get("vrt"):
+            if export_config.get("vrt") and data_source:
                 export_vrt(data_source, out_root)
 
         else:
@@ -272,14 +342,19 @@ def run(
             print("[robustraster] Running user function...")
             processor.run_and_export_results(data_source)
 
+            # Shutdown first, then close client
+            try:
+                client.shutdown()
+            except Exception:
+                pass
             client.close()
-            client.shutdown()
 
             if export_config.get("vrt"):
                 export_vrt(data_source, out_root)
 
         # ========== HOOK: after_run ==========
-        if "after_run" in hooks:
+        # ========== HOOK: after_run ==========
+        if "after_run" in hooks and data_source:
             hooks["after_run"](data_source.dataset)
 
     except Exception as e:
