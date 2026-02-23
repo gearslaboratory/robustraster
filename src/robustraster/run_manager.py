@@ -89,8 +89,92 @@ def run(
 
     # user_function_config parameters extracted
     user_function = user_function_config.get("user_function")
-    user_function_args = user_function_config.get("user_function_args")
-    user_function_kwargs = user_function_config.get("user_function_kwargs")
+    user_function_args = user_function_config.get("user_function_args", ())
+    user_function_kwargs = user_function_config.get("user_function_kwargs", {})
+    is_r_function = user_function_config.get("is_r_function", False)
+    r_function_code = user_function_config.get("r_function_code", "")
+    r_function_name = user_function_config.get("r_function_name", "")
+
+    if is_r_function:
+        if not dask_use_docker:
+            raise ValueError("Running R code requires dask_use_docker=True")
+        if not r_function_code or not r_function_name:
+            raise ValueError("r_function_code and r_function_name must be provided in user_function_config if is_r_function is True")
+
+        def r_wrapper(df, *args, **kwargs):
+            try:
+                import pandas as pd
+                import rpy2.robjects as ro
+                from rpy2.robjects import pandas2ri
+                from rpy2.robjects.conversion import localconverter
+                from rpy2.robjects import default_converter
+                
+                # Execute the dataframe conversion and native R operations using the modern context manager
+                with localconverter(default_converter + pandas2ri.converter):
+                    # Load the code into the R environment
+                    ro.r(r_function_code)
+                    r_func = ro.globalenv[r_function_name]
+
+                    # Execute it with the pandas dataframe passed to R
+                    r_df = ro.conversion.py2rpy(df)
+                    result_r = r_func(r_df)
+                    result_py = ro.conversion.rpy2py(result_r)
+                
+                # R POSIXct types often force a UTC timezone when coming back to Python.
+                # robustraster relies on naive datetimes to map back to xarray coordinates.
+                if 'time' in result_py.columns and pd.api.types.is_datetime64_any_dtype(result_py['time']):
+                    if result_py['time'].dt.tz is not None:
+                        result_py['time'] = result_py['time'].dt.tz_localize(None)
+
+                return result_py
+            except ImportError as ie:
+                # Handle rpy2 not installed natively (like docker run without manual R packages)
+                import subprocess
+                import tempfile
+                import os
+                import pandas as pd
+                
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    in_csv = os.path.join(temp_dir, "in.csv")
+                    out_csv = os.path.join(temp_dir, "out.csv")
+                    r_script_path = os.path.join(temp_dir, "script.R")
+                    
+                    df.to_csv(in_csv, index=False)
+                    
+                    in_csv_r = in_csv.replace('\\\\', '/')
+                    out_csv_r = out_csv.replace('\\\\', '/')
+                    r_script_content = f"""
+{r_function_code}
+
+in_data <- read.csv("{in_csv_r}")
+out_data <- {r_function_name}(in_data)
+write.csv(out_data, "{out_csv_r}", row.names=FALSE)
+"""
+                    with open(r_script_path, 'w') as f:
+                        f.write(r_script_content)
+                    
+                    # Ensure Rscript works via command line
+                    try:
+                        subprocess.run(["Rscript", r_script_path], check=True, capture_output=True, text=True)
+                    except subprocess.CalledProcessError as e:
+                        print(f"Rscript failed with error (stderr):\\n{e.stderr}")
+                        print(f"Rscript stdout:\\n{e.stdout}")
+                        raise RuntimeError(f"R code execution failed! {e.stderr}")
+                    except FileNotFoundError:
+                        raise RuntimeError(f"Rscript is not installed or not in PATH! Error: {ie}")
+                    
+                    if os.path.exists(out_csv):
+                        out_df = pd.read_csv(out_csv)
+                        return out_df
+                    else:
+                        raise FileNotFoundError("Rscript did not produce the expected output CSV.")
+
+        user_function = r_wrapper
+        user_function_config["user_function"] = r_wrapper
+
+    user_function_config.pop("is_r_function", None)
+    user_function_config.pop("r_function_code", None)
+    user_function_config.pop("r_function_name", None)
 
     chunks = function_tuning_config.get("chunks", None)
 

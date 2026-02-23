@@ -17,6 +17,7 @@ RUN conda install -n base -c conda-forge -y \
     pyarrow=21.0.0 \
     fastparquet=2024.11.0 \
     numpy=2.0.1 \
+    rpy2=3.6.4 \
     # Ensure pip and setuptools are present
     pip \
     setuptools \

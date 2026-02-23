@@ -15,7 +15,6 @@ def find_tif_files(first_dim, time_val, out_root):
 
     vrt_basename = f"{first_dim}_{time_tag}"
     output_vrt_path = os.path.join(out_root, f"{vrt_basename}.vrt")
-    print(vrt_basename)
     tif_files = glob.glob(os.path.join(out_root, f"*{time_tag}*.tif"))
     generate_vrt(tif_files, output_vrt_path)
     

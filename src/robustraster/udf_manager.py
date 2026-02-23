@@ -89,8 +89,8 @@ class UserFunctionHandler:
         '''
         # User's function and parameters
         self.user_function = user_function
-        self.args = user_function_args
-        self.kwargs = user_function_kwargs
+        self.args = user_function_args if user_function_args is not None else ()
+        self.kwargs = user_function_kwargs if user_function_kwargs is not None else {}
 
         self.chunks = chunks
         self.output_template = output_template

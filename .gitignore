@@ -63,3 +63,8 @@ src/robustraster/__pycache__/run_manager.cpython-310.pyc
 src/robustraster/__pycache__/vector_export_manager.cpython-310.pyc
 src/robustraster/__pycache__/vrt_export_manager.cpython-310.pyc
 src/robustraster/__pycache__/dask_docker_cluster_manager.cpython-310.pyc
+src/robustraster.egg-info/top_level.txt
+src/robustraster.egg-info/SOURCES.txt
+src/robustraster.egg-info/requires.txt
+src/robustraster.egg-info/PKG-INFO
+src/robustraster.egg-info/dependency_links.txt

@@ -902,8 +902,6 @@ class EarthEngineDataset(DataReaderInterface):
         if is_degenerate(xarray_data):
             raise DegenerateTileError(f"Degenerate tile dims={dict(xarray_data.sizes)}")
             # mark tile as skipped and return early from your tile loop
-        print("LOOPDOLOOP")
-        print(xarray_data)
         return xarray_data
     
 def clip_ic(ic, geom):

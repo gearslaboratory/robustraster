@@ -239,7 +239,6 @@ class RasterExportProcessor:
                 output_folder = Path(self.kwargs.get("output_folder"))
                 report_path = setup_dask_reports(output_folder, tile_id=self._tile_id, slice_tag=None)
                 with performance_report(filename=report_path):
-                    print("LINE BEFORE result.compute()")
                     result.compute() 
 
             elif self.kwargs.get("report") is True and self._tile_id is None:
@@ -382,36 +381,6 @@ class RasterExportProcessor:
         if "spatial_ref" not in stacked.coords:
             print("CRS IS NOT SET! SET IT IN YOUR EARTH ENGINE CODE!")
         return stacked
-    
-    # def _export_to_geotiff(self, stacked):
-    #     output_folder = self.kwargs.get('output_folder', 'tiles')
-    #     os.makedirs(output_folder, exist_ok=True)
-    #     output_path = os.path.join(output_folder, f"{self._output_basename}.tif")
-
-    #     band_names = list(stacked.band.values)
-
-    #     with rasterio.open(
-    #         output_path,
-    #         "w",
-    #         driver="GTiff",
-    #         height=stacked.rio.height,
-    #         width=stacked.rio.width,
-    #         count=len(band_names),
-    #         dtype=str(stacked.dtype),
-    #         crs=stacked.rio.crs,
-    #         transform=stacked.rio.transform(),
-    #     ) as dst:
-    #         for idx, name in enumerate(band_names, start=1):
-    #             dst.write(stacked[idx - 1].values, indexes=idx)
-    #             dst.set_band_description(idx, str(name))
-    #             dst.update_tags(
-    #             x_min=float(stacked.coords["x"].values[0]),
-    #             x_max=float(stacked.coords["x"].values[-1]),
-    #             y_min=float(stacked.coords["y"].values[-1]),
-    #             y_max=float(stacked.coords["y"].values[0]),
-    #             )
-
-    #     print(f"Exported: {output_path} with bands {band_names}")
 
 
     def _export_to_geotiff(self, stacked):
@@ -442,10 +411,6 @@ class RasterExportProcessor:
         
         nx = stacked.sizes.get("x", 0)
         ny = stacked.sizes.get("y", 0)
-
-        # if nx < 2 or ny < 2:
-        #     print(f"Skipping tile {self._tile_id}: degenerate tile (x={nx}, y={ny})")
-        #     return
 
         # Compute pixel resolution from coordinate spacing
         # (Use abs because y usually decreases)
@@ -528,41 +493,3 @@ class RasterExportProcessor:
                 f.write(memfile.read())
 
         print(f"Exported to GCS: {gcs_path} with bands {list(stacked.band.values)}")
-    
-
-    # def _export_vrt(self, data_source: RasterDataset | EarthEngineDataset):
-    #     for i, time_val in enumerate(data_source.dataset[self._first_dim].values):
-    #         self._generate_vrt_from_tifs(time_val)
-    
-    # def _generate_vrt_from_tifs(self, time_val):
-    #     """Generate a VRT from all GeoTIFF files in a given directory."""
-    #     output_folder = self.kwargs.get('output_folder', 'tiles')
-    #     time_tag = self._safe_time(time_val)
-
-    #     if self._tile_id:
-    #         vrt_basename = f"tile_{self._tile_id}__{self._first_dim}_{time_tag}"
-    #         output_vrt_path = os.path.join(output_folder, f"{vrt_basename}.vrt")
-    #         print(vrt_basename)
-    #         print(self._output_basename)
-    #         tif_files = glob.glob(os.path.join(output_folder, f"{self._output_basename}.tif"))
-    #         self._generate_vrt(tif_files, output_vrt_path)
-    #     else:
-    #         vrt_basename = f"{self._first_dim}_{time_tag}.vrt"
-    #         output_vrt_path = os.path.join(output_folder, f"{vrt_basename}.vrt")
-    #         tif_files = glob.glob(os.path.join(output_folder, f"*{self._first_dim}_{time_tag}*.tif"))
-    #         self._generate_vrt(tif_files, output_vrt_path)
-    
-    # def _generate_vrt(self, input_files: list, output_vrt: str):
-    #     """Generate a VRT file from a list of GeoTIFF files."""
-    #     if not input_files:
-    #         print("No GeoTIFF files found to create VRT.")
-    #         return
-        
-    #     vrt_dataset = gdal.BuildVRT(output_vrt, input_files)
-
-    #     if vrt_dataset:
-    #         vrt_dataset.FlushCache()  # Save changes
-    #         vrt_dataset = None  # Close dataset
-    #         print(f"VRT file created successfully: {output_vrt}")
-    #     else:
-    #         print("Failed to create VRT file.")

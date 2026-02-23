@@ -30,11 +30,13 @@ requirements:
     - geopandas =1.0.1
     - gcsfs =2025.3.2
     - gdal =3.10.2
+    - rpy2
     - ipykernel =6.29.5
     - geemap =0.36.1
     - docker-py =7.1.0
     - pyarrow =21.0.0
     - fastparquet =2024.11.0
+    - rpy2 =3.6.4
 
 test:
   source_files:

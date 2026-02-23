@@ -16,3 +16,4 @@ soupsieve==2.6
 geopandas==1.0.1
 gcsfs==2025.3.2
 msgpack==1.0.8
+rpy2==3.6.4
