@@ -75,6 +75,7 @@ class RasterExportProcessor:
                 return fn()
             except Exception as e:
                 # Retry ONLY if this looks like an EE quota / throttling error
+                print("Error: ", e)
                 if not self._is_ee_retryable_error(e):
                     raise
 
