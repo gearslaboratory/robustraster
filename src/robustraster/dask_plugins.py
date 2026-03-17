@@ -19,7 +19,7 @@ def make_robust_ee_call(original_method, method_name=None):
 
     def wrapper(*args, **kwargs):
         # Configuration for backoff
-        max_retries = 10
+        max_retries = 100
         base_delay = 1.0
         max_delay = 60.0
         
