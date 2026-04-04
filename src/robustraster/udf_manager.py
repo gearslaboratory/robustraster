@@ -81,7 +81,7 @@ class UserFunctionHandler:
 
         # Option C: accept tuning-related keys you pass in
         chunks: Any = None,
-        output_template: Any = None,
+        output_column_names: Any = None,
         max_iterations: Optional[int] = None,
     ) -> None:
         '''
@@ -93,7 +93,7 @@ class UserFunctionHandler:
         self.kwargs = user_function_kwargs if user_function_kwargs is not None else {}
 
         self.chunks = chunks
-        self.output_template = output_template
+        self.output_column_names = output_column_names
         self.max_iterations = max_iterations
 
         # Chunk size parameters
@@ -343,10 +343,10 @@ class UserFunctionHandler:
         """
 
         # Handle DataFrame or iterable
-        if isinstance(self.output_template, pd.DataFrame):
-            col_names = list(self.output_template.columns)
+        if isinstance(self.output_column_names, pd.DataFrame):
+            col_names = list(self.output_column_names.columns)
         else:
-            col_names = list(self.output_template)
+            col_names = list(self.output_column_names)
 
         if not col_names:
             raise ValueError("No output columns provided.")
@@ -440,7 +440,7 @@ class UserFunctionHandler:
         return template
 
     def _generate_template_xarray(self, ds):
-        if self.output_template is not None:
+        if self.output_column_names is not None:
             return self._generate_template_xarray_from_user(ds)
         else:
             print("AUTO")
@@ -470,7 +470,20 @@ class UserFunctionHandler:
         # See also https://docs.dask.org/en/stable/best-practices.html#load-data-with-dask for more information.
         df_input = ds.to_dataframe().reset_index()
         df_output = self.user_function(df_input, *self.args, **self.kwargs)
-        df_output = df_output.set_index(list(ds.dims))
+        
+        import pandas as pd
+        if isinstance(df_output, pd.Series):
+            if df_output.name is None:
+                df_output.name = 'output'
+            df_output = df_output.to_frame()
+
+        # Auto-append missing dataset dimensions directly from the input dataframe.
+        dims = list(ds.dims)
+        for dim in dims:
+            if dim not in df_output.columns and dim in df_input.columns:
+                df_output[dim] = df_input[dim]
+                
+        df_output = df_output.set_index(dims)
         ds_output = df_output.to_xarray()
         return ds_output
         

@@ -437,9 +437,13 @@ write.csv(out_data, "{out_csv_r}", row.names=FALSE)
                 export_vrt(data_source, out_root)
 
         # ========== HOOK: after_run ==========
-        # ========== HOOK: after_run ==========
         if "after_run" in hooks and data_source:
             hooks["after_run"](data_source.dataset)
+
+        # ========== Upload to GEE ==========
+        if export_config.get("upload_results_to_gee"):
+            from .gee_upload_manager import upload_to_gee_from_gcs
+            upload_to_gee_from_gcs(export_config)
 
     except Exception as e:
         print(f"[robustraster] ❌ {type(e).__name__} during run():", str(e))

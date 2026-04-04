@@ -128,7 +128,18 @@ class VectorExportProcessor:
         """
         df_input = ds.to_dataframe().reset_index()
         df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
-        df_output = df_output.set_index(list(ds.dims))
+        import pandas as pd
+        if isinstance(df_output, pd.Series):
+            if df_output.name is None:
+                df_output.name = 'output'
+            df_output = df_output.to_frame()
+
+        dims = list(ds.dims)
+        for dim in dims:
+            if dim not in df_output.columns and dim in df_input.columns:
+                df_output[dim] = df_input[dim]
+                
+        df_output = df_output.set_index(dims)
         ds_output = df_output.to_xarray()
 
         for i, time_val in enumerate(ds_output[self._first_dim].values):
@@ -161,7 +172,18 @@ class VectorExportProcessor:
         """
         df_input = ds.to_dataframe().reset_index()
         df_output = self.user_function_handler.user_function(df_input, *self.user_function_handler.args, **self.user_function_handler.kwargs)
-        df_output = df_output.set_index(list(ds.dims))
+        import pandas as pd
+        if isinstance(df_output, pd.Series):
+            if df_output.name is None:
+                df_output.name = 'output'
+            df_output = df_output.to_frame()
+
+        dims = list(ds.dims)
+        for dim in dims:
+            if dim not in df_output.columns and dim in df_input.columns:
+                df_output[dim] = df_input[dim]
+                
+        df_output = df_output.set_index(dims)
         ds_output = df_output.to_xarray()
 
         for i, time_val in enumerate(ds_output[self._first_dim].values):
