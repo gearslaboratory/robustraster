@@ -64,7 +64,7 @@ def run(
     source: str,
     preview_dataset: bool = False,
     tune_function: bool = False,
-    max_pixels_per_tile: int = None,
+    max_pixels_per_tile: int = 1_000_000,
     dataset_config: dict[str, Any] = None,
     user_function_config: dict[str, Any] = None,
     function_tuning_config: Optional[dict[str, Any]] = None,
