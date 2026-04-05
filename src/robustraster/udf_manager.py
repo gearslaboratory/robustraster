@@ -144,11 +144,32 @@ class UserFunctionHandler:
             return False
 
     def _get_starting_slice(self, ds):
-        # Get the dimension names
+        # Extract the dimension names from the chunked dataset
         dim_names = list(ds.dims)
-        
+
         # Find the dimension that should be sliced specifically (e.g., first dimension)
         specific_dim_name = dim_names[0]  # Assume the first dimension needs specific slicing
+
+        try:
+            total_bytes_per_pixel = sum(ds[var].dtype.itemsize for var in ds.data_vars)
+            if total_bytes_per_pixel <= 0:
+                total_bytes_per_pixel = 8
+        except Exception:
+            total_bytes_per_pixel = 8 # fallback
+            
+        # Target roughly 10MB conservative jumpstart spatial bounds limit
+        target_bytes = 10 * 1024 * 1024
+        target_pixels = target_bytes / max(1, total_bytes_per_pixel)
+        
+        # Adjust target geometrically across spatial metrics dynamically ignoring temporal values
+        specific_dim_size = ds.sizes.get(specific_dim_name, 1)
+        target_spatial_pixels = max(1, target_pixels / max(1, specific_dim_size))
+        
+        spatial_dims_count = len(dim_names) - 1
+        if spatial_dims_count > 0:
+            initial_spatial_size = max(1, int(target_spatial_pixels ** (1 / spatial_dims_count)))
+        else:
+            initial_spatial_size = 1
 
         # Dynamically create slices for all dimensions
         slices = {}
@@ -157,8 +178,9 @@ class UserFunctionHandler:
                 # Slice the specific dimension from 0 to its full size
                 slices[dim] = slice(0, ds.sizes[dim])  
             else:
-                # Slice other dimensions from 0 to 1
-                slices[dim] = slice(0, 1)
+                # Bound the evaluated slice sizes securely to exactly fit without fractional overlap bugs over dataset
+                s_size = min(initial_spatial_size, ds.sizes[dim])
+                slices[dim] = slice(0, s_size)
 
         # Select the slice for the first chunk
         ds_slice = ds.isel(**slices)
@@ -224,49 +246,55 @@ class UserFunctionHandler:
 
             # Check if two or more iterations have been performed
             elif len(df) >= 2:
+                
+                latest_memory_gib = df['RC(GiB)'].iloc[-1]
+                wram_limit = df['wRAM'].iloc[-1]
+                
+                # Check hardware limits natively
+                safe_ram_limit = wram_limit * 0.80
+                print(f"Memory Benchmark -> Actual: {latest_memory_gib:.2f} GiB | Ceiling limit: {wram_limit:.2f} GiB")
+                
+                if latest_memory_gib > safe_ram_limit:
+                    print("⚠️ WARNING: Reached max safe memory ceiling! Dropping backward to optimal safe size.")
+                    self._iteration_count = 0
+                    self._small_diff_count = 0
+                    pmh.clean_up_files()
+                    return
+
                 # Get the last two Tparallel values
                 previous_tparallel = df['Tparallel(pixel/worker)'].iloc[-2]
                 latest_tparallel = df['Tparallel(pixel/worker)'].iloc[-1]
 
-                print(previous_tparallel)
-                print(latest_tparallel)
+                print("Previous processing time:", previous_tparallel)
+                print("Latest processing time:", latest_tparallel)
+                
+                improvement_percent = ((previous_tparallel - latest_tparallel) / previous_tparallel) * 100
+                print(f"Algorithm Improvement Rate: {improvement_percent:.2f}%")
 
-                # If latest is greater or equal to previous, return chunked dataset
-                if latest_tparallel >= previous_tparallel:
+                if improvement_percent < -5:
+                    print("Performance radically degraded by > 5%. Halting growth execution sequence.")
                     self._iteration_count = 0
                     self._small_diff_count = 0
-
                     pmh.clean_up_files()
-                    #self._write_optimal_chunks_to_file()
                     return
-
-                # If latest is smaller, check the percentage difference
-                else:
-                    percentage_diff = abs((previous_tparallel - latest_tparallel) / previous_tparallel) * 100
+                elif improvement_percent <= 5:
+                    print("Performance plateauing marginally within (-5% to +5% variation).")
+                    self._small_diff_count += 1
                     
-                    # If the difference is less than or equal to 1%, increment the small_diff_count
-                    if percentage_diff <= 1:
-                        print("Difference is only less than or equal to 1%")
-                        self._small_diff_count += 1
-
-                        # If small_diff_count reaches 3, return chunked dataset
-                        if self._small_diff_count >= 3:
-                            self._iteration_count = 0
-                            self._small_diff_count = 0
-
-                            pmh.clean_up_files()
-                            #self._write_optimal_chunks_to_file()
-                            return 
-
-                        # If small_diff_count is less than 3, rerun with the same chunk size
-                        return self._get_tuned_xarray(ds, ds_slice, template_xarray, is_ee_source)
-
-                    # If the difference is greater than 1%, adjust the chunk size and rerun the test
-                    else:
-                        print("Difference is GREATER than 1%")
+                    if self._small_diff_count >= 3:
+                        print("Performance stability completely hit limitation boundary ceiling. Halting.")
+                        self._iteration_count = 0
                         self._small_diff_count = 0
-                        bigger_slice = self._get_bigger_slice(ds, ds_slice)
-                        return self._get_tuned_xarray(ds, bigger_slice, template_xarray, is_ee_source)
+                        pmh.clean_up_files()
+                        return
+                    
+                    # Rerun tests leveraging exact exact chunk parameter scaling dimensions
+                    return self._get_tuned_xarray(ds, ds_slice, template_xarray, is_ee_source)
+                else:
+                    print("Difference improved remarkably scaling constraints! (> 5% reduction gains)")
+                    self._small_diff_count = 0
+                    bigger_slice = self._get_bigger_slice(ds, ds_slice)
+                    return self._get_tuned_xarray(ds, bigger_slice, template_xarray, is_ee_source)
             
             # Break the loop if max_iterations is set and limit is reached
             if self.max_iterations is not None and self._iteration_count >= self.max_iterations:
@@ -294,8 +322,10 @@ class UserFunctionHandler:
                 # Keep the first dimension's slice as is
                 slices[dim_name] = slice(0, dimension_sizes[i])
             elif i == dimension_to_double:
-                # Double the slice size of the selected dimension
-                slices[dim_name] = slice(0, dimension_sizes[i] * 2)
+                # Double the slice size cleanly ensuring explicit containment inside absolute maximal size arrays limits
+                doubled_size = dimension_sizes[i] * 2
+                s_size = min(doubled_size, ds.sizes[dim_name])
+                slices[dim_name] = slice(0, s_size)
             else:
                 # Keep the slice size of other dimensions as is
                 slices[dim_name] = slice(0, dimension_sizes[i])

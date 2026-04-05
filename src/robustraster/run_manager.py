@@ -338,69 +338,149 @@ write.csv(out_data, "{out_csv_r}", row.names=FALSE)
             )
         # ========== Dataset Load + Run ==========
         if source == "ee" and max_pixels_per_tile is not None:
-            # Required tiling inputs
-            crs = dataset_config.get("crs")
-            scale = dataset_config.get("scale")
-            aoi = dataset_config.get("geometry")
-
-            if crs is None or scale is None or aoi is None:
-                raise ValueError(
-                    "max_pixels_per_tile requires dataset_config['geometry'], "
-                    "dataset_config['crs'], and dataset_config['scale']."
-                )
-
-            # Build server-side tile collection
-            tiles_fc = ee_covering_grid_tiles(
-                aoi=aoi,
-                crs=crs,
-                scale=scale,
-                max_pixels_per_tile=int(max_pixels_per_tile),
-            )
-
-            clipped_tiles = clip_tiles_to_aoi(tiles_fc, aoi)
-            print("[robustraster] AOI tiling enabled. Streaming tiles in batches...")
-
-            total_tiles = tiles_fc.size().getInfo()
-            if total_tiles == 0:
-                print("[robustraster] ⚠️ No tiles found covering the AOI. Check your geometry and scale.")
+            import warnings
+            import shutil
+            import math
+            import re
+            
+            class GraphTooLargeError(Exception):
+                pass
 
             out_root = export_config.get("output_folder", "tiles")
 
-            # Process tiles sequentially, but retrieve geometries in batches
-            # Process tiles sequentially, but retrieve geometries in batches
-            data_source = None
-            for tile_i, tile_geom in enumerate(iter_tiles_from_fc(clipped_tiles, batch_size=200), start=1):
-                tile_dataset_config = dict(dataset_config)
-                tile_dataset_config["geometry"] = tile_geom
+            while True:
+                # Required tiling inputs
+                crs = dataset_config.get("crs")
+                scale = dataset_config.get("scale")
+                aoi = dataset_config.get("geometry")
 
-                print(f"[robustraster] Processing tile {tile_i} of {total_tiles}")
+                if crs is None or scale is None or aoi is None:
+                    raise ValueError(
+                        "max_pixels_per_tile requires dataset_config['geometry'], "
+                        "dataset_config['crs'], and dataset_config['scale']."
+                    )
 
-                # Resume logic: skip tiles that already succeeded
-                success_marker = report_dir(out_root) / f"tile_{tile_i}.success.json"
-                if success_marker.exists():
-                    print(f"[robustraster] ✅ Tile {tile_i} already succeeded; skipping.")
-                    continue
-                
-                while True:
-                    try:
-                        data_source = DatasetAdapterFactory(source, dataset, tile_dataset_config, chunks=chunks)
-                    except DegenerateTileError as e:
-                        print(f"[robustraster] ⚠️ Skipping tile {tile_i}: {e}")
-                        # optionally write a skip marker so resume logic doesn't keep re-hitting it
-                        write_failure(tile_i, out_root, e)  # or write_skip(...) if you add one
-                        break
-                    try:
-                        #if tile_i == 2:
-                        #    raise RuntimeError("TEST: simulated tile failure")
+                # Build server-side tile collection
+                tiles_fc = ee_covering_grid_tiles(
+                    aoi=aoi,
+                    crs=crs,
+                    scale=scale,
+                    max_pixels_per_tile=int(max_pixels_per_tile),
+                )
+
+                clipped_tiles = clip_tiles_to_aoi(tiles_fc, aoi)
+                print("[robustraster] AOI tiling enabled. Streaming tiles in batches...")
+
+                total_tiles = tiles_fc.size().getInfo()
+                if total_tiles == 0:
+                    print("[robustraster] ⚠️ No tiles found covering the AOI. Check your geometry and scale.")
+
+                data_source = None
+                try:
+                    for tile_i, tile_geom in enumerate(iter_tiles_from_fc(clipped_tiles, batch_size=200), start=1):
+                        tile_dataset_config = dict(dataset_config)
+                        tile_dataset_config["geometry"] = tile_geom
+
+                        print(f"[robustraster] Processing tile {tile_i} of {total_tiles}")
+
+                        # Resume logic: skip tiles that already succeeded
+                        success_marker = report_dir(out_root) / f"tile_{tile_i}.success.json"
+                        if success_marker.exists():
+                            print(f"[robustraster] ✅ Tile {tile_i} already succeeded; skipping.")
+                            continue
                         
-                        print("[robustraster] Running user function...")
-                        processor._tile_id = tile_i
-                        processor.run_and_export_results(data_source)
-                        write_success(tile_i, out_root)
-                    except Exception as e:
-                        write_failure(tile_i, out_root, e)
-                        raise
-                    break # Success
+                        while True:
+                            try:
+                                data_source = DatasetAdapterFactory(source, dataset, tile_dataset_config, chunks=chunks)
+                            except DegenerateTileError as e:
+                                print(f"[robustraster] ⚠️ Skipping tile {tile_i}: {e}")
+                                write_failure(tile_i, out_root, e)
+                                break
+                            
+                            try:
+                                print("[robustraster] Running user function...")
+                                processor._tile_id = tile_i
+                                
+                                # Use warnings catcher to intercept large graphs
+                                with warnings.catch_warnings():
+                                    warnings.filterwarnings('error', message='.*Sending large graph.*', category=UserWarning)
+                                    try:
+                                        processor.run_and_export_results(data_source)
+                                    except UserWarning as warn_e:
+                                        if "Sending large graph" in str(warn_e):
+                                            raise GraphTooLargeError(str(warn_e))
+                                        else:
+                                            raise
+                                
+                                write_success(tile_i, out_root)
+                            except Exception as e:
+                                if isinstance(e, GraphTooLargeError):
+                                    raise  # Propagate up to outer loop
+                                write_failure(tile_i, out_root, e)
+                                raise
+                            break # Success
+
+                except GraphTooLargeError as ge:
+                    print(f"[robustraster] ⚠️ Caught Dask graph size warning:\n {ge}\n")
+                    print("[robustraster] 🔄 Dynamically downscaling max_pixels_per_tile and restarting!")
+                    
+                    # Parse the graph size from warning message
+                    msg = str(ge)
+                    size_match = re.search(r"size\s+([0-9.]+)\s+([a-zA-Z]+)", msg)
+                    
+                    if size_match:
+                        size_val = float(size_match.group(1))
+                        size_unit = size_match.group(2)
+                        
+                        # Normalize to MiB
+                        if size_unit == "GiB":
+                            size_mib = size_val * 1024
+                        elif size_unit == "MiB" or size_unit == "MB":
+                            size_mib = size_val
+                        elif size_unit == "KiB" or size_unit == "KB":
+                            size_mib = size_val / 1024
+                        elif size_unit == "TiB":
+                            size_mib = size_val * (1024 ** 2)
+                        else:
+                            size_mib = size_val # fallback assumption
+                            
+                        # Calculate required reduction factor (targeting safe 8 MiB)
+                        target_mib = 8.0
+                        if size_mib > target_mib:
+                            ratio = target_mib / size_mib
+                            target_pixels = max_pixels_per_tile * ratio
+                            
+                            new_side = math.floor(math.sqrt(target_pixels))
+                            new_pixels = new_side * new_side
+                            
+                            # Safety check, make sure it actually drops
+                            if new_pixels >= max_pixels_per_tile:
+                                new_pixels = int(max_pixels_per_tile * 0.5)
+                                new_side = math.floor(math.sqrt(new_pixels))
+                                new_pixels = new_side * new_side
+                                
+                            max_pixels_per_tile = int(new_pixels)
+                        else:
+                            # It's less than 8 MiB but Dask still complained? Force half.
+                            new_pixels = int(max_pixels_per_tile * 0.5)
+                            new_side = math.floor(math.sqrt(new_pixels))
+                            max_pixels_per_tile = new_side * new_side
+                    else:
+                        # Fallback static ratio if regex parsing fails
+                        new_pixels = int(max_pixels_per_tile * 0.5)
+                        new_side = math.floor(math.sqrt(new_pixels))
+                        max_pixels_per_tile = new_side * new_side
+                        
+                    print(f"[robustraster] 📉 New max_pixels_per_tile set to {max_pixels_per_tile} ({new_side}x{new_side})")
+                    
+                    # Wipe conflict caches
+                    if os.path.exists(out_root):
+                        shutil.rmtree(out_root)
+                        
+                    continue # Restart the outer `while True` loop
+                
+                # If we successfully completed all tiles without GraphTooLargeError:
+                break
 
             # Shutdown first, then close client
             try:
