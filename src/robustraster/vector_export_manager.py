@@ -134,6 +134,8 @@ class VectorExportProcessor:
                 df_output.name = 'output'
             df_output = df_output.to_frame()
 
+        df_output = df_output.copy()
+
         dims = list(ds.dims)
         for dim in dims:
             if dim not in df_output.columns and dim in df_input.columns:
@@ -177,6 +179,8 @@ class VectorExportProcessor:
             if df_output.name is None:
                 df_output.name = 'output'
             df_output = df_output.to_frame()
+
+        df_output = df_output.copy()
 
         dims = list(ds.dims)
         for dim in dims:

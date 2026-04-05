@@ -8,16 +8,17 @@ import psutil
 import math
 
 def create_metrics_report():
-    # Open the CSV file in append mode and write the header and new row
-    with open('metrics_report.csv', 'a', newline='') as csvfile:
+    # Open the CSV file in write mode to overwrite any previous failed run's files
+    with open('metrics_report.csv', 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
 
-        # Write the header if the file is new
+        # Write the header
         writer.writerow(["Chunk Size", "C", "TC(s)", "RC(GiB)", "wMax", "wRAM", "Tpixel(s/pixel)", "Tparallel(pixel/worker)"])
 
 def convert_to_seconds(time_str):
     # Dictionary to store conversion factors
     conversion_factors = {
+        'us': 1e-6,  # microseconds to seconds
         'ms': 1e-3,  # milliseconds to seconds
         's': 1,      # seconds to seconds
         'min': 60,   # minutes to seconds
@@ -68,7 +69,7 @@ def convert_to_gigabytes(ram_str):
     else:
         raise ValueError(f"Unrecognized RAM unit: {unit}")  
       
-def get_wall_time_and_memory():
+def get_wall_time_and_memory(fallback_compute_time_seconds=None):
     # Open the HTML file
     with open('dask_report.html', 'r', encoding='utf-8') as file:
         # Read the content of the file
@@ -83,11 +84,15 @@ def get_wall_time_and_memory():
 
     # Step 3: If a match is found, extract the value and the unit
     if not match:
-        raise ValueError("Compute time not found in the Dask report. IDK why it sometimes appears.")
-    
-    compute_time_value = match.group(1)  # The numeric value (e.g., "13.30")
-    compute_time_unit = match.group(2)  # The unit (e.g., "s")
-    compute_time_string = compute_time_value + " " + compute_time_unit
+        if fallback_compute_time_seconds is not None:
+            compute_time_seconds = fallback_compute_time_seconds
+        else:
+            raise ValueError("Compute time not found in the Dask report. IDK why it sometimes appears.")
+    else:
+        compute_time_value = match.group(1)  # The numeric value (e.g., "13.30")
+        compute_time_unit = match.group(2)  # The unit (e.g., "s")
+        compute_time_string = compute_time_value + " " + compute_time_unit
+        compute_time_seconds = convert_to_seconds(compute_time_string)
 
     # Let's revise the regex pattern to capture the data more flexibly
     memory_pattern_final = r'"memory",\["min: [^"]+",\s*"max: ([0-9.]+) ([a-zA-Z]+)",\s*"mean: [^"]+"\]'
@@ -99,13 +104,10 @@ def get_wall_time_and_memory():
         max_memory_value = match_final.group(1)
         max_memory_unit = match_final.group(2)
         max_memory_string = max_memory_value + " " + max_memory_unit
+        max_memory_gb = convert_to_gigabytes(max_memory_string)
     else:
-        max_memory_value = None
-        max_memory_unit = None
-        max_memory_string = max_memory_value + " " + max_memory_unit
-
-    compute_time_seconds = convert_to_seconds(compute_time_string)
-    max_memory_gb = convert_to_gigabytes(max_memory_string)
+        # Provide a small fallback memory if not found in the report
+        max_memory_gb = 0.01
 
     return compute_time_seconds, max_memory_gb
 
@@ -128,8 +130,8 @@ def get_available_system_memory():
 
 def get_compute_time_per_pixel(ds, compute_time_seconds, max_memory_gb):
     # Assuming xarray_obj is your chunked xarray dataset
-    derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()}
-    pixels_per_chunk = reduce(operator.mul, derived_chunk_size.values())
+    derived_chunk_size = {dim: chunks[0] for dim, chunks in ds.chunks.items()} if getattr(ds, "chunks", None) else {}
+    pixels_per_chunk = reduce(operator.mul, derived_chunk_size.values(), 1)
 
     max_workers = os.cpu_count()
     
@@ -148,8 +150,8 @@ def get_compute_time_per_pixel(ds, compute_time_seconds, max_memory_gb):
 
     return row
 
-def write_performance_metrics_to_file(ds):
-    compute_time_seconds, max_memory_gb = get_wall_time_and_memory()
+def write_performance_metrics_to_file(ds, fallback_compute_time_seconds=None):
+    compute_time_seconds, max_memory_gb = get_wall_time_and_memory(fallback_compute_time_seconds)
 
     row = get_compute_time_per_pixel(ds, compute_time_seconds, max_memory_gb)
 

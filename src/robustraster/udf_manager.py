@@ -177,7 +177,7 @@ class UserFunctionHandler:
 
         print(f"Optimal chunks written to {file_name}")
         
-    def _get_tuned_xarray(self, ds, ds_slice, template_xarray):
+    def _get_tuned_xarray(self, ds, ds_slice, template_xarray, is_ee_source=False):
         # Check if the current chunk size exceeds the EarthEngineDataset chunk limit.
         if self._max_chunks_limit:
             if self._is_chunk_bigger_than_limit(ds_slice, self._max_chunks_limit):
@@ -192,17 +192,25 @@ class UserFunctionHandler:
             print("TUNER!!!")
             self._iteration_count += 1
             
+            if is_ee_source:
+                ds_slice_eval = ds_slice.compute()
+            else:
+                ds_slice_eval = ds_slice
+
             test = xr.map_blocks(self._user_function_wrapper, 
-                                ds_slice, 
+                                ds_slice_eval, 
                                 args=(self.user_function,),
                                 template=template_xarray)
 
             # Create a Dask report of the single chunked run
+            import time
+            start_time = time.time()
             with performance_report(filename="dask_report.html"):
                 test.compute()
+            fallback_compute_time = time.time() - start_time
             
             # Write performance metrics to a CSV
-            pmh.write_performance_metrics_to_file(ds_slice)
+            pmh.write_performance_metrics_to_file(ds_slice, fallback_compute_time)
 
             # Read the CSV file into a DataFrame
             df = pd.read_csv("metrics_report.csv")
@@ -212,7 +220,7 @@ class UserFunctionHandler:
                 bigger_slice = self._get_bigger_slice(ds, ds_slice)
     
                 # Rerun test with this new chunk size
-                return self._get_tuned_xarray(ds, bigger_slice, template_xarray)
+                return self._get_tuned_xarray(ds, bigger_slice, template_xarray, is_ee_source)
 
             # Check if two or more iterations have been performed
             elif len(df) >= 2:
@@ -251,14 +259,14 @@ class UserFunctionHandler:
                             return 
 
                         # If small_diff_count is less than 3, rerun with the same chunk size
-                        return self._get_tuned_xarray(ds, ds_slice, template_xarray)
+                        return self._get_tuned_xarray(ds, ds_slice, template_xarray, is_ee_source)
 
                     # If the difference is greater than 1%, adjust the chunk size and rerun the test
                     else:
                         print("Difference is GREATER than 1%")
                         self._small_diff_count = 0
                         bigger_slice = self._get_bigger_slice(ds, ds_slice)
-                        return self._get_tuned_xarray(ds, bigger_slice, template_xarray)
+                        return self._get_tuned_xarray(ds, bigger_slice, template_xarray, is_ee_source)
             
             # Break the loop if max_iterations is set and limit is reached
             if self.max_iterations is not None and self._iteration_count >= self.max_iterations:
@@ -476,6 +484,8 @@ class UserFunctionHandler:
                 df_output.name = 'output'
             df_output = df_output.to_frame()
 
+        df_output = df_output.copy()
+
         # Auto-append missing dataset dimensions directly from the input dataframe.
         dims = list(ds.dims)
         for dim in dims:
@@ -644,10 +654,15 @@ class UserFunctionHandler:
         ds_slice = self._get_starting_slice(ds_chunked)
         print("STARTING SLICE...")
         print(ds_slice)
+        is_ee_source = data_source.__class__.__name__ == 'EarthEngineDataset'
+
         template_xarray = self._generate_template_xarray(ds_slice)
         print("TEMPLATE XARRAY")
         print(template_xarray)
-        return self._get_tuned_xarray(ds, ds_slice, template_xarray)
+        try:
+            return self._get_tuned_xarray(ds_chunked, ds_slice, template_xarray, is_ee_source)
+        finally:
+            pmh.clean_up_files()
 '''    
     def apply_user_function(self, data_source: RasterDataset | EarthEngineDataset, 
                             chunks: Optional[dict | str] = None):

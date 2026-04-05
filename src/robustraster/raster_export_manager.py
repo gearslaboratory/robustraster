@@ -121,6 +121,8 @@ class RasterExportProcessor:
                 df_output.name = 'output'
             df_output = df_output.to_frame()
 
+        df_output = df_output.copy()
+
         dims = list(ds.dims)
         for dim in dims:
             if dim not in df_output.columns and dim in df_input.columns:
@@ -259,6 +261,17 @@ class RasterExportProcessor:
         vrt_dataset = gdal.BuildVRT(output_vrt, input_files)
 
         if vrt_dataset:
+            try:
+                first_dataset = gdal.Open(input_files[0])
+                if first_dataset:
+                    for i in range(1, first_dataset.RasterCount + 1):
+                        desc = first_dataset.GetRasterBand(i).GetDescription()
+                        if desc:
+                            vrt_dataset.GetRasterBand(i).SetDescription(desc)
+                    first_dataset = None
+            except Exception as e:
+                print(f"Could not copy band descriptions: {e}")
+
             vrt_dataset.FlushCache()  # Save changes
             vrt_dataset = None  # Close dataset
             print(f"VRT file created successfully: {output_vrt}")
