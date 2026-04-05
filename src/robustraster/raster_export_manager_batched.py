@@ -214,7 +214,7 @@ class RasterExportProcessor:
             ):
                 ds_part = ds.isel(indexers)
 
-                template_part = self.user_function_handler._generate_template_xarray(ds_part)
+                template_part = self._template_xarray.isel(indexers)
 
                 result = xr.map_blocks(
                     self._user_function_export_wrapper,

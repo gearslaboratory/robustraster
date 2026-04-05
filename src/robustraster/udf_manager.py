@@ -424,7 +424,7 @@ class UserFunctionHandler:
             else:
                 # For new variables, define the shape and chunks manually based on the original chunking strategy
                 new_var_shape = tuple(ds.sizes[dim] for dim in processed_chunk[var].dims)
-                new_var_chunks = tuple(ds.chunks[dim][0] for dim in processed_chunk[var].dims)
+                new_var_chunks = tuple(ds.chunks[dim] for dim in processed_chunk[var].dims)
                 template_vars[var] = (processed_chunk[var].dims, 
                                     da.empty(new_var_shape, 
                                             chunks=new_var_chunks, 
@@ -443,7 +443,6 @@ class UserFunctionHandler:
         if self.output_column_names is not None:
             return self._generate_template_xarray_from_user(ds)
         else:
-            print("AUTO")
             return self._autogenerate_template_xarray(ds)
 
     def _user_function_wrapper(self, ds, *args):

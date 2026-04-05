@@ -29,12 +29,15 @@ A string that defines the dataset source.
 
 ---
 
-### 3. `dataset_config: dict[str, Any]`
-A dictionary of dataset configuration options. 
+### 3. `user_function_config: dict[str, Any]`
+A dictionary of user function configuration options. 
 
 - `user_function Callable[[pd.DataFrame], pd.DataFrame]`: Name of the user function to be used for processing the dataset.  
 - `user_function_args`: Tuple of user function arguments to pass into `user_function`.
 - `user_function_kwargs`: Dictionary of user function keyword arguments to pass into `user_function`.
+- `is_r_function: bool`: Set to `True` if you are executing R code instead of Python. Requires `dask_use_docker` to be `True`.
+- `r_function_code: str`: The R script code as a string (required if `is_r_function=True`).
+- `r_function_name: str`: The name of the main R function to execute (required if `is_r_function=True`).
 
 ---
 
@@ -77,7 +80,13 @@ Required only for Earth Engine datasets. Includes:
 
 ---
 
-### 7. `preview_dataset: bool`
+### 7. `max_pixels_per_tile: int`
+The maximum number of pixels to process per chunk/tile when pulling data from Earth Engine.
+Defaults to `1_000_000`.
+
+---
+
+### 8. `preview_dataset: bool`
 Set to `True` to display a small preview of the dataset before and after excecuting your function.
 This allows users to inspect the structure and content of the data to ensure it behaves as expected prior to running a full computation.
 Useful for debugging.
@@ -85,24 +94,24 @@ Defaults to `False`.
 
 ---
 
-### 8. `tune_function: bool`  
+### 9. `tune_function: bool`  
 Set to `True` to automatically find an appropriate chunk size for optimized processing.  
 Defaults to `False`.
 See [`05_tuning.md`](./05_tuning.md) for details.
 
 ---
 
-### 9. `dask_mode: str`  
+### 10. `dask_mode: str`  
 Defines how to initialize the Dask cluster.  
 Defaults to `"full"`.
 
 - `"full"`: Use all available cores and memory  
 - `"test"`: Single-threaded/single worker mode for debugging  
-- `"custom"`: Requires `dask_kwargs`
+- `"custom"`: Requires `dask_config`
 
 ---
 
-### 10. `dask_config: dict[str, Any]`  
+### 11. `dask_config: dict[str, Any]`  
 Used only when `dask_mode="custom"`.  
 
 - `n_workers`: Number of workers  
@@ -111,7 +120,24 @@ Used only when `dask_mode="custom"`.
 
 ---
 
-### 14. `hooks: dict[str, Callable]`  
+### 12. `dask_use_docker: bool`
+Set to `True` to run the Dask cluster using Docker containers. Required for executing R code.
+Defaults to `False`.
+
+---
+
+### 13. `dask_docker_image: str`
+The Docker image to use for the Dask workers when `dask_use_docker=True`.
+Required if `dask_use_docker=True`.
+
+---
+
+### 14. `dask_docker_kwargs: dict[str, Any]`
+Additional keyword arguments to pass to the Docker container initialization (e.g., configurations specific to the docker-py package or passing environment configs).
+
+---
+
+### 15. `hooks: dict[str, Callable]`  
 Allows you to inject functions at various stages of the run lifecycle.  
 
 Hook keys include:

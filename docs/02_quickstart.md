@@ -357,7 +357,6 @@ In this example, we'll process a year's worth of Landsat imagery (2018) saved di
 ```python
 
 # Import necessary libraries
-import glob
 from robustraster import run
 
 # Your UDF goes here. It must accept a pandas DataFrame and return a pandas DataFrame.
@@ -365,12 +364,12 @@ def compute_ndvi(df):
     df["ndvi"] = (df["SR_B5"] - df["SR_B4"]) / (df["SR_B5"] + df["SR_B4"])
     return df
 
-# Grab all your local 2018 Landsat TIF files
-local_2018_files = glob.glob(r"path\to\local\landsat\2018\*.tif")
+# Path to your local 2018 Landsat VRT file
+2018_vrt_file = r"path\to\local\landsat\2018\2018.vrt"
 list_of_column_names = ["ndvi"]
 
 run(
-    dataset=local_2018_files,
+    dataset=2018_vrt_file,
     source="local",
     user_function_config={
         "user_function": compute_ndvi,

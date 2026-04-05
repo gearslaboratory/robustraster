@@ -303,7 +303,6 @@ write.csv(out_data, "{out_csv_r}", row.names=FALSE)
             # No tiling necessary! As the tuning code will only grab a slice of the data at a time.
             # ONLY WORKS FOR EE I THINK!
             data_source = DatasetAdapterFactory(source, dataset, dataset_config, chunks=chunks)
-            function_tuning_config.pop
             handler = UserFunctionHandler(
                 **user_function_config,
                 **function_tuning_config
