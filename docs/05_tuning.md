@@ -1,12 +1,12 @@
 # Function Tuning with `tune_function`
 
-The `tune_function` parameter in `run()` is designed to automatically optimize how your custom function is applied to large datasets. It evaluates your dataset and physically gauges your system's resources in real-time to determine the most computationally optimal chunk configuration for processing the data in parallel.
+The `tune_function` key in `function_tuning_config` is designed to automatically optimize how your custom function is applied to large datasets. It evaluates your dataset and physically gauges your system's resources in real-time to determine the most computationally optimal chunk configuration for processing the data in parallel.
 
 ---
 
 ## What Does It Do?
 
-If you set `tune_function` to `True`, it will take in two things:
+If you set `"tune_function": True` inside your `function_tuning_config` dictionary, it will take in two things:
 
 1. Your **dataset object**
 2. Your **custom function**
@@ -59,6 +59,6 @@ When `tune_function` fires, you won't see popups on your screen. However, under 
 
 ## Last Note
 
-The `tune_function` parameter is completely optional. When set to `False` (default), the tuning step is skipped entirely mathematically, and a default chunk size configuration is utilized automatically. This default configuration already does an exceptionally solid job parallelizing your arrays natively. 
+The `tune_function` key is completely optional. When set to `False` (default), the tuning step is skipped entirely mathematically, and a default chunk size configuration is utilized automatically. This default configuration already does an exceptionally solid job parallelizing your arrays natively. 
 
-If you prefer to control your Dask environment logic manually, you can simply leave `tune_function=False` and cleanly pass your own arbitrary dimension chunks utilizing the `chunks` keyword argument via `function_tuning_config`.
+If you prefer to control your Dask environment logic manually, you can simply leave `"tune_function": False` (or omit it entirely) and cleanly pass your own arbitrary dimension chunks utilizing the `"chunks"` key within `function_tuning_config`.

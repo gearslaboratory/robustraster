@@ -56,8 +56,9 @@ A dictionary of export configuration options.
 ### 4. `function_tuning_config: dict[str, Any]`
 A dictionary of function tuning configuration options.
 
+- `tune_function`: Set to `True` to automatically find an appropriate chunk size for optimized processing. Defaults to `False`. See [`05_tuning.md`](./05_tuning.md) for details.
 - `chunks`: Tuple of chunk sizes for optimized processing. See [`03_what_is_dask.md`](./03_what_is_dask.md) for details.
-- `max_iterations`: If `tune_function=True`, you can set the amount of times the tuning process iterates to find an optimal chunk size. Defaults to `None`. See [`05_tuning.md`](./05_tuning.md) for details.
+- `max_iterations`: If `tune_function` is `True`, you can set the amount of times the tuning process iterates to find an optimal chunk size. Defaults to `None`. See [`05_tuning.md`](./05_tuning.md) for details.
 - `output_column_names`: (Optional) List of column names that will be in the output result. As of recent updates, this is now inferred automatically!
 
 
@@ -85,14 +86,7 @@ Defaults to `False`.
 
 ---
 
-### 8. `tune_function: bool`  
-Set to `True` to automatically find an appropriate chunk size for optimized processing.  
-Defaults to `False`.
-See [`05_tuning.md`](./05_tuning.md) for details.
-
----
-
-### 9. `dask_mode: str`  
+### 8. `dask_mode: str`  
 Defines how to initialize the Dask cluster.  
 Defaults to `"full"`.
 
@@ -102,7 +96,7 @@ Defaults to `"full"`.
 
 ---
 
-### 10. `dask_config: dict[str, Any]`  
+### 9. `dask_config: dict[str, Any]`  
 Used only when `dask_mode="custom"`.  
 
 - `n_workers`: Number of workers  
@@ -111,17 +105,17 @@ Used only when `dask_mode="custom"`.
 
 ---
 
-### 11. `docker_image: str`
+### 10. `docker_image: str`
 The Docker image to use for the Dask workers if you want to run the Dask cluster using Docker containers. Required for executing R code.
 
 ---
 
-### 12. `dask_docker_kwargs: dict[str, Any]`
+### 11. `dask_docker_kwargs: dict[str, Any]`
 Additional keyword arguments to pass to the Docker container initialization (e.g., configurations specific to the docker-py package or passing environment configs).
 
 ---
 
-### 14. `hooks: dict[str, Callable]`  
+### 12. `hooks: dict[str, Callable]`  
 Allows you to inject functions at various stages of the run lifecycle.  
 
 Hook keys include:

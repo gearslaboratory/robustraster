@@ -61,7 +61,6 @@ def write_failure(tile_id, out_dir, exc):
 def run(
     dataset: str | list[str] | ee.imagecollection.ImageCollection,
     preview_dataset: bool = False,
-    tune_function: bool = False,
     max_pixels_per_tile: int = 1_000_000,
     dataset_config: dict[str, Any] = None,
     user_function_config: dict[str, Any] = None,
@@ -87,6 +86,7 @@ def run(
 
     dataset_config = dataset_config or {}
     function_tuning_config = function_tuning_config or {}
+    tune_function = function_tuning_config.pop("tune_function", False)
     export_config = export_config or {}
     dask_config = dask_config or {}
     dask_docker_kwargs = dask_docker_kwargs or {}

@@ -272,7 +272,7 @@ def test_tune_function_triggers_tuning(mock_raster, mock_tune):
         user_function=lambda df: df,
         export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="test",
-        tune_function=True
+        function_tuning_config={"tune_function": True}
     )
 
     mock_tune.assert_called_once()

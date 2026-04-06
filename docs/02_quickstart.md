@@ -24,7 +24,7 @@ In this example, we’ll export NDVI tiles to your local machine using Google Ea
 4. **Call `run()`** with all parameters:
    - Set `dataset` to the Earth Engine ImageCollection.
    - Set our dataset parameters (export region, CRS, and scale) with `dataset_kwargs`.
-   - Set an optional `tune_function` to `True` to auto-optimize your function to your dataset in preparation for the full run. For more details function tuning, see [`05_tuning.md`](./05_tuning.md) and [`03_what_is_dask.md`](./03_what_is_dask.md)
+   - Set an optional `"tune_function": True` inside `function_tuning_config` to auto-optimize your function to your dataset in preparation for the full run. For more details on function tuning, see [`05_tuning.md`](./05_tuning.md) and [`03_what_is_dask.md`](./03_what_is_dask.md)
    - Set our export parameters (where to export, output folder name, export a VRT) using `export_kwargs`.
 
 ---
