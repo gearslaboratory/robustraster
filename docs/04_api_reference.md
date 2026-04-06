@@ -33,16 +33,7 @@ A dictionary of user function configuration options.
 
 ---
 
-### 3. `function_tuning_config: dict[str, Any]`
-A dictionary of function tuning configuration options. 
-
-- `chunks`: Tuple of chunk sizes for optimized processing. See [`03_what_is_dask.md`](./03_what_is_dask.md) for details.
-- `max_iterations`: If `tune_function=True`, you can set the amount of times the tuning process iterates to find an optimal chunk size. Defaults to `None`. See [`05_tuning.md`](./05_tuning.md) for details.
-- `output_column_names`: List of column names that will be in the output result.
-
----
-
-### 4. `export_config: dict[str, Any]`  
+### 3. `export_config: dict[str, Any]`  
 A dictionary of export configuration options.   
 
 - `mode`: `raster` for raster export and `vector` for vector export.  
@@ -61,6 +52,14 @@ A dictionary of export configuration options.
 ---
 
 ## Optional Parameters
+
+### 4. `function_tuning_config: dict[str, Any]`
+A dictionary of function tuning configuration options.
+
+- `chunks`: Tuple of chunk sizes for optimized processing. See [`03_what_is_dask.md`](./03_what_is_dask.md) for details.
+- `max_iterations`: If `tune_function=True`, you can set the amount of times the tuning process iterates to find an optimal chunk size. Defaults to `None`. See [`05_tuning.md`](./05_tuning.md) for details.
+- `output_column_names`: (Optional) List of column names that will be in the output result. As of recent updates, this is now inferred automatically!
+
 
 ### 5. `dataset_config: dict[str, Any]`  
 Required only for Earth Engine datasets. Includes:
