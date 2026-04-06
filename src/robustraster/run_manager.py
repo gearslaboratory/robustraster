@@ -1,8 +1,7 @@
 from .dataset_manager import RasterDataset, EarthEngineDataset, DegenerateTileError
 from .dask_cluster_manager import DaskClusterManager
 from .dask_docker_cluster_manager import DDClusterManager  # NEW: Docker-based cluster manager
-#from .raster_export_manager import RasterExportProcessor
-from .raster_export_manager_batched import RasterExportProcessor
+from .raster_export_manager import RasterExportProcessor
 from .vector_export_manager import VectorExportProcessor
 from .udf_manager import UserFunctionHandler
 from .dask_plugins import EEPlugin, patch_ee_methods
@@ -61,7 +60,6 @@ def write_failure(tile_id, out_dir, exc):
 
 def run(
     dataset: str | list[str] | ee.imagecollection.ImageCollection,
-    source: str,
     preview_dataset: bool = False,
     tune_function: bool = False,
     max_pixels_per_tile: int = 1_000_000,
@@ -80,6 +78,13 @@ def run(
     """
     Main interface to run a user-defined function across geospatial raster data.
     """
+    if isinstance(dataset, ee.imagecollection.ImageCollection):
+        source = "ee"
+    elif isinstance(dataset, (str, list)):
+        source = "local"
+    else:
+        raise TypeError("dataset must be an ee.ImageCollection, a string path, or a list of string paths.")
+
     dataset_config = dataset_config or {}
     function_tuning_config = function_tuning_config or {}
     export_config = export_config or {}

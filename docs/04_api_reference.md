@@ -21,15 +21,7 @@ The input raster source.
 
 ---
 
-### 2. `source: str`  
-A string that defines the dataset source.  
-
-- Use `"local"` for raster files on disk  
-- Use `"ee"` for Earth Engine collections
-
----
-
-### 3. `user_function_config: dict[str, Any]`
+### 2. `user_function_config: dict[str, Any]`
 A dictionary of user function configuration options. 
 
 - `user_function Callable[[pd.DataFrame], pd.DataFrame]`: Name of the user function to be used for processing the dataset.  
@@ -41,7 +33,7 @@ A dictionary of user function configuration options.
 
 ---
 
-### 4. `function_tuning_config: dict[str, Any]`
+### 3. `function_tuning_config: dict[str, Any]`
 A dictionary of function tuning configuration options. 
 
 - `chunks`: Tuple of chunk sizes for optimized processing. See [`03_what_is_dask.md`](./03_what_is_dask.md) for details.
@@ -50,7 +42,7 @@ A dictionary of function tuning configuration options.
 
 ---
 
-### 5. `export_config: dict[str, Any]`  
+### 4. `export_config: dict[str, Any]`  
 A dictionary of export configuration options.   
 
 - `mode`: `raster` for raster export and `vector` for vector export.  
@@ -70,7 +62,7 @@ A dictionary of export configuration options.
 
 ## Optional Parameters
 
-### 6. `dataset_config: dict[str, Any]`  
+### 5. `dataset_config: dict[str, Any]`  
 Required only for Earth Engine datasets. Includes:
 
 - `geometry`: Path to `.geojson`, `.shp`, `.gpkg`, zipped shapefiles, an ee.Geometry() or an ee.FeatureCollection() 
@@ -80,13 +72,13 @@ Required only for Earth Engine datasets. Includes:
 
 ---
 
-### 7. `max_pixels_per_tile: int`
+### 6. `max_pixels_per_tile: int`
 The maximum number of pixels to process per chunk/tile when pulling data from Earth Engine.
 Defaults to `1_000_000`.
 
 ---
 
-### 8. `preview_dataset: bool`
+### 7. `preview_dataset: bool`
 Set to `True` to display a small preview of the dataset before and after excecuting your function.
 This allows users to inspect the structure and content of the data to ensure it behaves as expected prior to running a full computation.
 Useful for debugging.
@@ -94,14 +86,14 @@ Defaults to `False`.
 
 ---
 
-### 9. `tune_function: bool`  
+### 8. `tune_function: bool`  
 Set to `True` to automatically find an appropriate chunk size for optimized processing.  
 Defaults to `False`.
 See [`05_tuning.md`](./05_tuning.md) for details.
 
 ---
 
-### 10. `dask_mode: str`  
+### 9. `dask_mode: str`  
 Defines how to initialize the Dask cluster.  
 Defaults to `"full"`.
 
@@ -111,7 +103,7 @@ Defaults to `"full"`.
 
 ---
 
-### 11. `dask_config: dict[str, Any]`  
+### 10. `dask_config: dict[str, Any]`  
 Used only when `dask_mode="custom"`.  
 
 - `n_workers`: Number of workers  
@@ -120,24 +112,24 @@ Used only when `dask_mode="custom"`.
 
 ---
 
-### 12. `dask_use_docker: bool`
+### 11. `dask_use_docker: bool`
 Set to `True` to run the Dask cluster using Docker containers. Required for executing R code.
 Defaults to `False`.
 
 ---
 
-### 13. `dask_docker_image: str`
+### 12. `dask_docker_image: str`
 The Docker image to use for the Dask workers when `dask_use_docker=True`.
 Required if `dask_use_docker=True`.
 
 ---
 
-### 14. `dask_docker_kwargs: dict[str, Any]`
+### 13. `dask_docker_kwargs: dict[str, Any]`
 Additional keyword arguments to pass to the Docker container initialization (e.g., configurations specific to the docker-py package or passing environment configs).
 
 ---
 
-### 15. `hooks: dict[str, Callable]`  
+### 14. `hooks: dict[str, Callable]`  
 Allows you to inject functions at various stages of the run lifecycle.  
 
 Hook keys include:

@@ -2,6 +2,7 @@ from osgeo import gdal
 import rasterio
 from rasterio.io import MemoryFile
 from .dataset_manager import RasterDataset, EarthEngineDataset
+from .format_time import create_time_tag
 from google.cloud import storage
 import xarray as xr
 import gcsfs
@@ -27,12 +28,25 @@ class VectorExportProcessor:
         self._time_value = None
         self._output_basename = None
         self._gcs_prefix = None
+        self._tile_id = None
     
-    def _create_output_basename(self, ds_block):
-        time_str = str(self._time_value).replace(":", "_").replace("-", "_").replace(" ", "_")
-        chunk_hash = hash(tuple(ds_block.coords[dim].values[0] for dim in ds_block.dims))
+    def _create_output_basename(self, slice_2d, time_tag):
+        x_dim = 'x' if 'x' in slice_2d.coords else 'X'
+        y_dim = 'y' if 'y' in slice_2d.coords else 'Y'
 
-        return f"chunk_{chunk_hash}_{self._first_dim}_{time_str}"
+        x0 = float(slice_2d[x_dim].min())
+        x1 = float(slice_2d[x_dim].max())
+        y0 = float(slice_2d[y_dim].min())
+        y1 = float(slice_2d[y_dim].max())
+
+        x0, x1, y0, y1 = map(lambda v: int(round(v)), (x0, x1, y0, y1))
+
+        bbox_tag = f"x{x0}_{x1}_y{y0}_{y1}"
+
+        if self._tile_id:
+            return f"{bbox_tag}_tile_{self._tile_id}__{self._first_dim}_{time_tag}"
+        else:
+            return f"{bbox_tag}__{self._first_dim}_{time_tag}"
 
     def _create_bucket_and_folder(self, gcs_credentials, gcs_bucket, gcs_folder):
         # Initialize GCS client
@@ -146,8 +160,9 @@ class VectorExportProcessor:
 
         for i, time_val in enumerate(ds_output[self._first_dim].values):
             self._time_value = time_val
+            time_tag = create_time_tag(time_val)
             slice_2d = ds_output.isel({self._first_dim: i})
-            self._output_basename = self._create_output_basename(slice_2d)
+            self._output_basename = self._create_output_basename(slice_2d, time_tag)
             if self.kwargs.get('export_to_gcs'):
                 self._export_csv_to_gcs(df_output)
             else:
@@ -192,8 +207,9 @@ class VectorExportProcessor:
 
         for i, time_val in enumerate(ds_output[self._first_dim].values):
             self._time_value = time_val
+            time_tag = create_time_tag(time_val)
             slice_2d = ds_output.isel({self._first_dim: i})
-            self._output_basename = self._create_output_basename(slice_2d)
+            self._output_basename = self._create_output_basename(slice_2d, time_tag)
             if self.kwargs.get('export_to_gcs'):
                 self._export_parquet_to_gcs(df_output)
             else:

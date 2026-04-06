@@ -23,7 +23,6 @@ In this example, we’ll export NDVI tiles to your local machine using Google Ea
 
 4. **Call `run()`** with all parameters:
    - Set `dataset` to the Earth Engine ImageCollection.
-   - Set `source` to "ee" for Earth Engine.
    - Set our dataset parameters (export region, CRS, and scale) with `dataset_kwargs`.
    - Set an optional `tune_function` to `True` to auto-optimize your function to your dataset in preparation for the full run. For more details function tuning, see [`05_tuning.md`](./05_tuning.md) and [`03_what_is_dask.md`](./03_what_is_dask.md)
    - Set our export parameters (where to export, output folder name, export a VRT) using `export_kwargs`.
@@ -72,7 +71,6 @@ list_of_column_names = ["ndvi"]
 
 run(
     dataset=ic,
-    source="ee",
     dataset_kwargs={
         "geometry": r"path\to\geojson-file.geojson",
         "crs": "EPSG:3310",
@@ -112,7 +110,6 @@ def compute_ndvi(df):
 
 run(
     dataset=ic,
-    source="ee",
     preview_dataset=True,
     dataset_kwargs={
     "geometry": r"path\to\geojson-file.geojson",
@@ -170,7 +167,6 @@ def compute_ndvi(df, number_to_add):
 
 run(
     dataset=ic,
-    source="ee",
     dataset_params={
         "geometry": r"path\to\shapefile.shp",
         "crs": "EPSG:3310",
@@ -205,7 +201,6 @@ def compute_ndvi(df, number_to_add):
 
 run(
     dataset=ic,
-    source="ee",
     dataset_params={
         "geometry": ee.FeatureCollection("path/to/fc"),
         "crs": "EPSG:3310",
@@ -259,7 +254,6 @@ from robustraster import run
 
 run(
     dataset=ic,
-    source="ee",
     dataset_kwargs={
         "geometry": r"path\to\geojson-file.geojson",
         "crs": "EPSG:3310",
@@ -320,7 +314,6 @@ from robustraster import run
 
 run(
     dataset=ic,
-    source="ee",
     dataset_kwargs={
         "geometry": r"path\to\geojson-file.geojson",
         "crs": "EPSG:3310",
@@ -370,7 +363,6 @@ list_of_column_names = ["ndvi"]
 
 run(
     dataset=2018_vrt_file,
-    source="local",
     user_function_config={
         "user_function": compute_ndvi,
         "user_function_args": (),
@@ -441,7 +433,6 @@ chunks = {"time": 1, "X": 2048, "Y": 2048}
 # 2. Run configured strictly over Docker with R Integration
 run(
     dataset=ic,
-    source="ee",
     dataset_config={
         'geometry': Plumas_Boundaries,
         'crs': 'EPSG:3310',

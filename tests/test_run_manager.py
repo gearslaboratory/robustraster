@@ -13,11 +13,10 @@ def dummy_function(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # ---- BASIC UNIT TESTS ----
-def test_invalid_source_raises_value_error():
-    with pytest.raises(ValueError, match=re.escape("Source must be 'ee' or a file path (str or list of str).")):
+def test_invalid_dataset_type_raises_type_error():
+    with pytest.raises(TypeError, match=re.escape("dataset must be an ee.ImageCollection, a string path, or a list of string paths.")):
         run(
-            dataset="dummy.tif",
-            source="invalid_source",
+            dataset=123,
             user_function=dummy_function,
             export_kwargs={"mode": "raster", "output_folder": "temp_out"}
         )
@@ -34,7 +33,6 @@ def test_preview_dataset_hook_invoked(mock_raster, mock_preview):
 
     run(
         dataset="dummy.tif",
-        source="local",
         user_function=dummy_function,
         preview_dataset=True,
         export_kwargs={"mode": "raster", "output_folder": "temp_out"},
@@ -59,7 +57,6 @@ def test_before_after_hooks_called(mock_raster):
     # Run the test
     run(
         dataset="file.tif",
-        source="local",
         user_function=dummy_function,
         export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="test",
@@ -92,7 +89,6 @@ def test_dask_cluster_initialization(mock_cluster, mock_raster, dask_mode):
     # Run the function
     run(
         dataset="dummy.tif",
-        source="local",
         user_function=dummy_function,
         export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode=dask_mode
@@ -117,7 +113,6 @@ def test_custom_dask_mode_passes_kwargs(mock_raster, mock_cluster):
     dask_kwargs = {"n_workers": 2, "threads_per_worker": 1}
     run(
         dataset="dummy.tif",
-        source="local",
         user_function=dummy_function,
         export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="custom",
@@ -139,7 +134,6 @@ def test_run_local_raster_minimal(mock_dask, mock_export, mock_raster):
 
     run(
         dataset="dummy.tif",
-        source="local",
         user_function=dummy_function,
         export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="test"
@@ -173,7 +167,6 @@ def test_run_with_earth_engine(mock_cluster, mock_ee_dataset):
     # Run
     run(
         dataset=mock_ic,
-        source="ee",
         dataset_kwargs={"geometry": "test.geojson"},
         user_function=dummy_function,
         export_kwargs={"mode": "raster", "output_folder": "temp_out"},
@@ -192,7 +185,6 @@ def test_missing_export_kwargs_raises_error(mock_raster):
     with pytest.raises(ValueError, match=re.escape("Missing required export configuration: 'mode'")):
         run(
             dataset="dummy.tif",
-            source="local",
             user_function=dummy_function,
             dask_mode="test"
         )
@@ -206,7 +198,6 @@ def test_missing_gcs_credentials_raises_value_error(mock_raster):
     with pytest.raises(ValueError, match=re.escape("Missing required GCS export configuration: gcs_credentials")):
         run(
             dataset="dummy.tif",
-            source="local",
             user_function=dummy_function,
             export_kwargs={"mode": "raster", "export_to_gcs": True, "gcs_bucket": "my_bucket"},
             dask_mode="test"
@@ -221,7 +212,6 @@ def test_missing_gcs_bucket_raises_value_error(mock_raster):
     with pytest.raises(ValueError, match=re.escape("Missing required GCS export configuration: gcs_bucket")):
         run(
             dataset="dummy.tif",
-            source="local",
             user_function=dummy_function,
             export_kwargs={"mode": "raster", "export_to_gcs": True, "gcs_credentials": "path/to/creds.json"},
             dask_mode="test"
@@ -239,7 +229,6 @@ def test_no_user_function(mock_raster):
     with pytest.raises(ValueError, match=re.escape("No user function was specified or user function is not callable! Please provide a function that accepts and returns a pandas DataFrame.")):
         run(
             dataset="file.tif",
-            source="local",
             export_kwargs={"mode": "raster", "output_folder": "temp_out"},
             dask_mode="test"
         )
@@ -257,7 +246,6 @@ def test_user_function_not_callable(mock_raster):
     with pytest.raises(ValueError, match=re.escape("No user function was specified or user function is not callable! Please provide a function that accepts and returns a pandas DataFrame.")):
         run(
             dataset="file.tif",
-            source="local",
             user_function="not_a_function",  # <-- Invalid input
             export_kwargs={"mode": "raster", "output_folder": "temp_out"},
             dask_mode="test"
@@ -281,7 +269,6 @@ def test_tune_function_triggers_tuning(mock_raster, mock_tune):
 
     run(
         dataset="dummy.tif",
-        source="local",
         user_function=lambda df: df,
         export_kwargs={"mode": "raster", "output_folder": "temp_out"},
         dask_mode="test",
