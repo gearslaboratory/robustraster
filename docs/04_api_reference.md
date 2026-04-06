@@ -27,7 +27,7 @@ A dictionary of user function configuration options.
 - `user_function Callable[[pd.DataFrame], pd.DataFrame]`: Name of the user function to be used for processing the dataset.  
 - `user_function_args`: Tuple of user function arguments to pass into `user_function`.
 - `user_function_kwargs`: Dictionary of user function keyword arguments to pass into `user_function`.
-- `is_r_function: bool`: Set to `True` if you are executing R code instead of Python. Requires `dask_use_docker` to be `True`.
+- `is_r_function: bool`: Set to `True` if you are executing R code instead of Python. Requires a `docker_image` to be provided.
 - `r_function_code: str`: The R script code as a string (required if `is_r_function=True`).
 - `r_function_name: str`: The name of the main R function to execute (required if `is_r_function=True`).
 
@@ -111,19 +111,12 @@ Used only when `dask_mode="custom"`.
 
 ---
 
-### 11. `dask_use_docker: bool`
-Set to `True` to run the Dask cluster using Docker containers. Required for executing R code.
-Defaults to `False`.
+### 11. `docker_image: str`
+The Docker image to use for the Dask workers if you want to run the Dask cluster using Docker containers. Required for executing R code.
 
 ---
 
-### 12. `dask_docker_image: str`
-The Docker image to use for the Dask workers when `dask_use_docker=True`.
-Required if `dask_use_docker=True`.
-
----
-
-### 13. `dask_docker_kwargs: dict[str, Any]`
+### 12. `dask_docker_kwargs: dict[str, Any]`
 Additional keyword arguments to pass to the Docker container initialization (e.g., configurations specific to the docker-py package or passing environment configs).
 
 ---

@@ -463,7 +463,7 @@ run(
         "threads_per_worker": 1,
         "memory_limit": "3g",
     },
-    dask_use_docker=True,
-    dask_docker_image="adrianomdocker/r042"
+
+    docker_image="adrianomdocker/r042"
 )
 ```

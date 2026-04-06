@@ -14,7 +14,7 @@ conda install -c conda-forge gdal
 ```
 
 ### 2. Docker (Optional but Recommended)
-While the `docker-py` Python library is automatically installed alongside `robustraster`, you must have the actual **Docker Engine / Docker Desktop** installed natively on your machine's OS if you intend to use the Docker-based Dask worker functionalities (e.g., executing custom R code, using `dask_use_docker=True`).
+While the `docker-py` Python library is automatically installed alongside `robustraster`, you must have the actual **Docker Engine / Docker Desktop** installed natively on your machine's OS if you intend to use the Docker-based Dask worker functionalities (e.g., executing custom R code, providing a `docker_image`).
 
 - **Windows / Mac**: Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 - **Linux**: Install Docker Engine via your system's package manager.

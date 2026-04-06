@@ -71,8 +71,8 @@ def run(
     dask_config: dict[str, Any] = None,
     hooks: Optional[dict[str, Callable[..., Any]]] = None,
     # --- NEW ---
-    dask_use_docker: bool = False,
-    dask_docker_image: Optional[str] = None,
+
+    docker_image: Optional[str] = None,
     dask_docker_kwargs: Optional[dict[str, Any]] = None,
 ):
     """
@@ -101,8 +101,8 @@ def run(
     r_function_name = user_function_config.get("r_function_name", "")
 
     if is_r_function:
-        if not dask_use_docker:
-            raise ValueError("Running R code requires dask_use_docker=True")
+        if not docker_image:
+            raise ValueError("Running R code requires a docker_image to be provided")
         if not r_function_code or not r_function_name:
             raise ValueError("r_function_code and r_function_name must be provided in user_function_config if is_r_function is True")
 
@@ -213,9 +213,7 @@ write.csv(out_data, "{out_csv_r}", row.names=FALSE)
             "distributed.worker.memory.pause": 0.90,
             "distributed.worker.memory.terminate": 0.98,
         })
-        if dask_use_docker:
-            if not dask_docker_image:
-                raise ValueError("dask_docker_image is required when dask_use_docker=True")
+        if docker_image:
             
             # --- Auto-mount Earth Engine Credentials ---
             # Try to find credentials on the host
@@ -270,7 +268,7 @@ write.csv(out_data, "{out_csv_r}", row.names=FALSE)
             env_vars["ROBUSTRASTER_OVERRIDE_OUTPUT"] = container_output_path
             dask_config["env_vars"] = env_vars
 
-            cluster_manager = DDClusterManager(docker_image=dask_docker_image, **dask_docker_kwargs)
+            cluster_manager = DDClusterManager(docker_image=docker_image, **dask_docker_kwargs)
             cluster_manager.create_cluster(mode=dask_mode, **dask_config)
             client = cluster_manager.get_dask_client
             print(f"[robustraster] Docker Dask cluster started: {client}")

@@ -70,8 +70,8 @@ def create_r_demo_notebook():
             "        \"threads_per_worker\": 1,\n",
             "        \"memory_limit\": \"3g\",\n",
             "    },\n",
-            "    dask_use_docker=True,\n",
-            "    dask_docker_image=\"adrianomdocker/rr042\"\n",
+
+            "    docker_image=\"adrianomdocker/rr042\"\n",
             ")"
         ]
     }
