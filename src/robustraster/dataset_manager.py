@@ -111,11 +111,34 @@ class RasterDataset(DataReaderInterface):
         band_names_override = dataset_config.get("band_names", {})
         prefer_desc = bool(dataset_config.get("prefer_desc_over_bandnames", True))
 
-        # Build simple integer time indices [0..N-1]
-        ts_list = list(range(len(raster_paths)))
+        # Try to guess timestamps from file names
+        import re
+        from pathlib import Path
+        
+        def _guess_timestamp_from_name(fp: str):
+            bn = Path(fp).name
+            for pat in [
+                r"(?P<y>\d{4})(?P<m>\d{2})(?P<d>\d{2})T(?P<H>\d{2})(?P<M>\d{2})(?P<S>\d{2})", # YYYYMMDDTHHMMSS
+                r"(?P<y>\d{4})(?P<m>\d{2})(?P<d>\d{2})", # YYYYMMDD
+                r"(?P<y>\d{4})[-_](?P<m>\d{2})[-_](?P<d>\d{2})", # YYYY-MM-DD or YYYY_MM_DD
+            ]:
+                m = re.search(pat, bn)
+                if m:
+                    gd = m.groupdict()
+                    if 'H' in gd:
+                        return f"{gd['y']}-{gd['m']}-{gd['d']}T{gd['H']}:{gd['M']}:{gd['S']}"
+                    else:
+                        return f"{gd['y']}-{gd['m']}-{gd['d']}"
+            return None
+
+        guessed = [_guess_timestamp_from_name(fp) for fp in raster_paths]
+        if all(g is not None for g in guessed):
+            ts_list = [np.datetime64(g) for g in guessed]
+        else:
+            ts_list = list(range(len(raster_paths)))
 
         # Open one file and package as Dataset on (time, X, Y)
-        def _open_package(fp: str, tstamp: int) -> xr.Dataset:
+        def _open_package(fp: str, tstamp) -> xr.Dataset:
             # Inspect band metadata
             with rasterio.open(fp) as src:
                 count = src.count
@@ -182,7 +205,7 @@ class RasterDataset(DataReaderInterface):
                 if y[0] < y[-1]:
                     ds = ds.sortby("Y", ascending=False)
 
-            ds = ds.expand_dims({time_dim: [int(tstamp)]})
+            ds = ds.expand_dims({time_dim: [tstamp]})
 
             # Chunk spatial dims
             for v in ds.data_vars:
@@ -207,9 +230,9 @@ class RasterDataset(DataReaderInterface):
                 if "band" in per_time[i][v].coords:
                     per_time[i][v] = per_time[i][v].drop_vars("band").squeeze(drop=True)
 
-        # Concatenate along integer time and sort (just in case)
+        # Concatenate along time and sort
         combined = xr.concat(per_time, dim=time_dim)
-        if np.issubdtype(combined[time_dim].dtype, np.integer):
+        if np.issubdtype(combined[time_dim].dtype, np.integer) or np.issubdtype(combined[time_dim].dtype, np.datetime64):
             combined = combined.sortby(time_dim)
 
         # Synthesize X/Y coords if missing (from affine)

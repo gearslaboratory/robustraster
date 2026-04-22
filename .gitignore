@@ -503,5 +503,9 @@ demos/Plumas_NDVI_Tiles_R_No_Tile_Docker/reports/tile_14_dask_report.html
 demos/Plumas_NDVI_Tiles_R_No_Tile_Docker/reports/tile_14.success.json
 demos/Plumas_NDVI_Tiles_R_No_Tile_Docker/reports/tile_15_dask_report.html
 demos/Plumas_NDVI_Tiles_R_No_Tile_Docker/reports/tile_15.success.json
+demos/Plumas_NDVI_Parquet
+demos/Plumas_NDVI_Tiles
+demos/Plumas_NDVI_Tiles_R_Docker
 demos/Plumas_NDVI_Tiles
 demos/Plumas_Tiles
+demos/Plumas_NDVI_Tiles_R_Docker_GCS/reports/tile_1.failure.json

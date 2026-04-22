@@ -107,13 +107,36 @@ def run(
             raise ValueError("r_function_code and r_function_name must be provided in user_function_config if is_r_function is True")
 
         def r_wrapper(df, *args, **kwargs):
+            import_failed = False
+            import_err = None
+            import warnings
+            import logging
+            
+            # Suppress rpy2 logs and warnings before importing on host machine
+            rpy2_logger = logging.getLogger('rpy2')
+            old_rpy2_level = rpy2_logger.level
+            rpy2_logger.setLevel(logging.CRITICAL)
+            
+            root_logger = logging.getLogger()
+            old_root_level = root_logger.level
+            root_logger.setLevel(logging.CRITICAL)
+
             try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    import rpy2.robjects as ro
+                    from rpy2.robjects import pandas2ri
+                    from rpy2.robjects.conversion import localconverter
+                    from rpy2.robjects import default_converter
+            except Exception as e:
+                import_failed = True
+                import_err = e
+            finally:
+                rpy2_logger.setLevel(old_rpy2_level)
+                root_logger.setLevel(old_root_level)
+
+            if not import_failed:
                 import pandas as pd
-                import rpy2.robjects as ro
-                from rpy2.robjects import pandas2ri
-                from rpy2.robjects.conversion import localconverter
-                from rpy2.robjects import default_converter
-                
                 # Execute the dataframe conversion and native R operations using the modern context manager
                 with localconverter(default_converter + pandas2ri.converter):
                     # Load the code into the R environment
@@ -132,7 +155,8 @@ def run(
                         result_py['time'] = result_py['time'].dt.tz_localize(None)
 
                 return result_py
-            except ImportError as ie:
+            else:
+                ie = import_err
                 # Handle rpy2 not installed natively (like docker run without manual R packages)
                 import subprocess
                 import tempfile
@@ -145,9 +169,18 @@ def run(
                     r_script_path = os.path.join(temp_dir, "script.R")
                     
                     df.to_csv(in_csv, index=False)
-                    
-                    in_csv_r = in_csv.replace('\\\\', '/')
-                    out_csv_r = out_csv.replace('\\\\', '/')
+                    use_docker_fallback = False
+                    import shutil
+                    if shutil.which("Rscript") is None and docker_image:
+                        use_docker_fallback = True
+                        
+                    if use_docker_fallback:
+                        in_csv_r = "/temp_workspace/in.csv"
+                        out_csv_r = "/temp_workspace/out.csv"
+                    else:
+                        in_csv_r = in_csv.replace('\\\\', '/')
+                        out_csv_r = out_csv.replace('\\\\', '/')
+                        
                     r_script_content = f"""
 {r_function_code}
 
@@ -158,9 +191,15 @@ write.csv(out_data, "{out_csv_r}", row.names=FALSE)
                     with open(r_script_path, 'w') as f:
                         f.write(r_script_content)
                     
-                    # Ensure Rscript works via command line
+                    cmd = []
+                    if use_docker_fallback:
+                        cmd = ["docker", "run", "--rm", "-v", f"{temp_dir}:/temp_workspace", docker_image, "Rscript", "/temp_workspace/script.R"]
+                    else:
+                        cmd = ["Rscript", r_script_path]
+                    
+                    # Ensure execution works seamlessly via command line or ephemeral docker
                     try:
-                        subprocess.run(["Rscript", r_script_path], check=True, capture_output=True, text=True)
+                        subprocess.run(cmd, check=True, capture_output=True, text=True)
                     except subprocess.CalledProcessError as e:
                         print(f"Rscript failed with error (stderr):\\n{e.stderr}")
                         print(f"Rscript stdout:\\n{e.stdout}")
@@ -261,11 +300,25 @@ write.csv(out_data, "{out_csv_r}", row.names=FALSE)
             
             # Bind RW
             volumes[host_output_path] = {'bind': container_output_path, 'mode': 'rw'}
+            
+            # --- Auto-mount robustraster source code ---
+            import robustraster
+            rr_path = os.path.dirname(robustraster.__file__)
+            # Mount the parent of `robustraster` (i.e. `src/`) to `/robustraster_src`
+            src_dir = os.path.dirname(rr_path)
+            container_src_path = "/robustraster_src"
+            volumes[src_dir] = {'bind': container_src_path, 'mode': 'ro'}
+            print(f"[robustraster] Mounting active package source: {src_dir} -> {container_src_path}")
+            
             dask_config["volumes"] = volumes
             
             # 3. Set environment variable for override
             env_vars = dask_config.get("env_vars", {})
             env_vars["ROBUSTRASTER_OVERRIDE_OUTPUT"] = container_output_path
+            
+            # Ensure the container uses the mounted source code
+            env_vars["PYTHONPATH"] = container_src_path
+            
             dask_config["env_vars"] = env_vars
 
             cluster_manager = DDClusterManager(docker_image=docker_image, **dask_docker_kwargs)

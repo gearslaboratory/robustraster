@@ -203,7 +203,8 @@ class UserFunctionHandler:
         # Check if the current chunk size exceeds the EarthEngineDataset chunk limit.
         if self._max_chunks_limit:
             if self._is_chunk_bigger_than_limit(ds_slice, self._max_chunks_limit):
-                print("SLICE IS BIGGER THAN DATA SOURCE'S MAX!")
+                print("[robustraster] Tuned chunk has exceeded Google Earth Engine's max chunk size!")
+                print("[robustraster] Setting tuned chunk size to Google Earth Engine's max chunk size...")
                 self._tuned_chunk_size = self._max_chunks_limit
 
                 pmh.clean_up_files()
@@ -211,7 +212,6 @@ class UserFunctionHandler:
                 return
             
         while True:
-            print("TUNER!!!")
             self._iteration_count += 1
             
             if is_ee_source:
@@ -682,13 +682,9 @@ class UserFunctionHandler:
         ds = data_source.dataset
         ds_chunked = self._create_tuning_chunk(ds)
         ds_slice = self._get_starting_slice(ds_chunked)
-        print("STARTING SLICE...")
-        print(ds_slice)
         is_ee_source = data_source.__class__.__name__ == 'EarthEngineDataset'
 
         template_xarray = self._generate_template_xarray(ds_slice)
-        print("TEMPLATE XARRAY")
-        print(template_xarray)
         try:
             return self._get_tuned_xarray(ds_chunked, ds_slice, template_xarray, is_ee_source)
         finally:

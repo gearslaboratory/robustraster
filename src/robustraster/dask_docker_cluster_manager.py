@@ -46,9 +46,10 @@ class DDClusterManager:
         return self.dask_client
 
     def _default_memory_limit(self, n_workers: int) -> str:
-        total_gb = psutil.virtual_memory().total / (1024 ** 3)
-        per_worker = max(1, int(total_gb // max(1, n_workers)))
-        return f"{per_worker}GB"
+        # Give Dask ~85% of the total system memory visible to python
+        total_mb = (psutil.virtual_memory().total / (1024 ** 2)) * 0.85
+        per_worker_mb = max(256, int(total_mb // max(1, n_workers)))
+        return f"{per_worker_mb}MB"
     
     def _find_free_port(self) -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

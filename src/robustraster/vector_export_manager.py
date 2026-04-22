@@ -3,6 +3,8 @@ import rasterio
 from rasterio.io import MemoryFile
 from .dataset_manager import RasterDataset, EarthEngineDataset
 from .format_time import create_time_tag
+from .reports_setup import setup_dask_reports
+from pathlib import Path
 from google.cloud import storage
 import xarray as xr
 import gcsfs
@@ -154,22 +156,34 @@ class VectorExportProcessor:
         for dim in dims:
             if dim not in df_output.columns and dim in df_input.columns:
                 df_output[dim] = df_input[dim]
+        
+        del df_input
+        import gc
+        gc.collect()
                 
         df_output = df_output.set_index(dims)
         ds_output = df_output.to_xarray()
+        
+        del df_output
+        gc.collect()
 
         for i, time_val in enumerate(ds_output[self._first_dim].values):
             self._time_value = time_val
             time_tag = create_time_tag(time_val)
             slice_2d = ds_output.isel({self._first_dim: i})
             self._output_basename = self._create_output_basename(slice_2d, time_tag)
+            df_slice = slice_2d.to_dataframe().reset_index()
+            
             if self.kwargs.get('export_to_gcs'):
-                self._export_csv_to_gcs(df_output)
+                self._export_csv_to_gcs(df_slice)
             else:
                 output_folder = self.kwargs.get('output_folder', 'tiles')
                 os.makedirs(output_folder, exist_ok=True)
                 output_path = os.path.join(output_folder, f"{self._output_basename}.csv")
-                df_output.to_csv(output_path)
+                df_slice.to_csv(output_path, index=False)
+            
+            del df_slice
+            gc.collect()
         
         return ds_output
     
@@ -201,22 +215,34 @@ class VectorExportProcessor:
         for dim in dims:
             if dim not in df_output.columns and dim in df_input.columns:
                 df_output[dim] = df_input[dim]
+        
+        del df_input
+        import gc
+        gc.collect()
                 
         df_output = df_output.set_index(dims)
         ds_output = df_output.to_xarray()
+        
+        del df_output
+        gc.collect()
 
         for i, time_val in enumerate(ds_output[self._first_dim].values):
             self._time_value = time_val
             time_tag = create_time_tag(time_val)
             slice_2d = ds_output.isel({self._first_dim: i})
             self._output_basename = self._create_output_basename(slice_2d, time_tag)
+            df_slice = slice_2d.to_dataframe().reset_index()
+            
             if self.kwargs.get('export_to_gcs'):
-                self._export_parquet_to_gcs(df_output)
+                self._export_parquet_to_gcs(df_slice)
             else:
                 output_folder = self.kwargs.get('output_folder', 'tiles')
                 os.makedirs(output_folder, exist_ok=True)
                 output_path = os.path.join(output_folder, f"{self._output_basename}.parquet")
-                df_output.to_parquet(output_path, index=False, engine="fastparquet") #could also use pyarrow
+                df_slice.to_parquet(output_path, index=False, engine="pyarrow") #could also use pyarrow
+            
+            del df_slice
+            gc.collect()
         
         return ds_output
     
@@ -246,7 +272,9 @@ class VectorExportProcessor:
                                     ds,
                                     template=template_xarray)
             if self.kwargs.get("report") is True:
-                with performance_report(filename="dask_report.html"):
+                output_folder = Path(self.kwargs.get("output_folder", "tiles"))
+                report_path = setup_dask_reports(output_folder, tile_id=self._tile_id, slice_tag=None)
+                with performance_report(filename=report_path):
                     result.compute()
             else:
                 result.compute()
@@ -257,7 +285,9 @@ class VectorExportProcessor:
                                     ds,
                                     template=template_xarray)
             if self.kwargs.get("report") is True:
-                with performance_report(filename="dask_report.html"):
+                output_folder = Path(self.kwargs.get("output_folder", "tiles"))
+                report_path = setup_dask_reports(output_folder, tile_id=self._tile_id, slice_tag=None)
+                with performance_report(filename=report_path):
                     result.compute()
             else:
                 result.compute()
