@@ -1,4 +1,4 @@
-# robusraster
+# robustraster
 
 Robust-Raster is a Python software package designed to empower scientists and researchers to analyze large satellite datasets effectively. In recent years, the amount of data collected from satellites has grown dramatically. While this data can provide insights into our planet, its sheer size poses significant challenges for traditional analysis methods. Robust-Raster bridges the gap, offering a user-friendly tool to perform custom analyses on large datasets without requiring advanced computing expertise.
 
